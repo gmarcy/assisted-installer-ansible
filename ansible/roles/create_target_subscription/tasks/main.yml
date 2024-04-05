@@ -1,6 +1,6 @@
 ---
 
-- when: target_operator_name != 'ibm-common-service-operator'
+- when: target_operator_name not in ['ibm-common-service-operator','ibm-websphere-automation']
   # this is not working when two catalog sources provide the same operator
   name: Fetch target_operator_name PackageManifest
   kubernetes.core.k8s_info:
@@ -11,8 +11,9 @@
     name: "{{ target_operator_name }}"
     namespace: "{{ target_catalog_source_namespace | default('openshift-marketplace') }}"
   register: _result_fast
+  until: _result_fast['resources'] | length > 0
 
-- when: target_operator_name == 'ibm-common-service-operator'
+- when: target_operator_name in ['ibm-common-service-operator','ibm-websphere-automation']
   name: Fetch target_operator_name PackageManifest
   kubernetes.core.k8s_info:
     api_key: "{{ api_key | default(omit) }}"
@@ -31,15 +32,15 @@
   loop: "{{ _result_fast['resources'] | default(_result_slow['resources']) }}"
   when: item['metadata']['name'] == target_operator_name and item['status']['catalogSource'] == target_catalog_source_name
 
-- name: Set default channel and catalog source facts
+- name: Set subscription channel and catalog source facts
   set_fact:
-    default_channel: "{{ target_operator_channel | default(manifest_status.defaultChannel) }}"
+    subscription_channel: "{{ target_operator_channel | default(manifest_status.defaultChannel) }}"
     catalog_source_name: "{{ manifest_status.catalogSource }}"
     catalog_source_namespace: "{{ manifest_status.catalogSourceNamespace }}"
 
 - name: Set current_csv fact
   set_fact:
-    current_csv: "{{ target_operator_csv | default(manifest_status.channels | selectattr('name','==',default_channel) | map(attribute='currentCSV') | first) }}"
+    current_csv: "{{ target_operator_csv | default(manifest_status.channels | selectattr('name','==',subscription_channel) | map(attribute='currentCSV') | first) }}"
 
 - name: Create Subscription
   kubernetes.core.k8s:
@@ -50,8 +51,10 @@
     name: "{{ target_operator_name }}"
     namespace: "{{ target_operator_namespace }}"
     definition:
+      metadata:
+        labels: "{{ target_operator_labels | default(omit) }}"
       spec:
-        channel: "{{ default_channel }}"
+        channel: "{{ subscription_channel }}"
         config: "{{ subscription_config | default(omit) }}"
         installPlanApproval: "{{ target_install_plan_approval | default('Automatic') }}"
         name: "{{ target_operator_name }}"
@@ -75,5 +78,5 @@
     wait: true
   register: _result
   delay: 10
-  retries: 24
-  until: (_result.resources | length > 0) and (_result.resources | map(attribute='status.phase') | unique == ['Succeeded'])
+  retries: 60
+  until: (_result.resources | length > 0) and (_result.resources | map(attribute='status.phase', default='Absent') | unique == ['Succeeded'])

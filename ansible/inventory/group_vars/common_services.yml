@@ -11,25 +11,11 @@ common_service_catalog_source_image_tag: "{{ inv_common_service_catalog_source_i
 common_service_catalog_source_publisher: "{{ inv_common_service_catalog_source_publisher | default('IBM') }}"
 common_service_catalog_source_poll_interval: "{{ inv_common_service_catalog_source_poll_interval | default('45m') }}"
 
-common_service_operator_channel: "{{ inv_common_service_operator_channel | default('v3.22') }}"
-common_service_namespace: "{{ inv_common_service_namespace | default('ibm-common-services') }}"
+common_service_namespace: "{{ inv_common_service_namespace | default(cloudpak_tenant_namespace) }}"
 
-common_service_operator_version: "{{ inv_common_service_operator_version | default(common_service_operator_channel + '.0') }}"
 common_service_operator_name: "{{ inv_common_service_operator_name | default('ibm-common-service-operator') }}"
 common_service_operator_namespace: "{{ inv_common_service_operator_namespace | default(common_service_namespace) }}"
-common_service_operator_group: "{{ inv_common_service_operator_group | default('ibm-common-services-operators') }}"
+common_service_operator_group: "{{ inv_common_service_operator_group | default(cloudpak_tenant_operator_group) }}"
 
 common_service_operand_name: "{{ inv_common_service_operand_name | default('common-service') }}"
 common_service_operand_namespace: "{{ inv_common_service_operand_namespace | default(common_service_namespace) }}"
-
-common_service_opreq_labels_keyvaluepairs:
-  - key: "{{ common_service_operand_namespace + '.' + common_service_operand_name + '/config' }}"
-    value: 'true'
-  - key: "{{ common_service_operand_namespace + '.' + common_service_operand_name + '/registry' }}"
-    value: 'true'
-  - key: operator.ibm.com/opreq-control
-    value: 'true'
-
-common_service_opreq_labels: "{{ common_service_opreq_labels_keyvaluepairs | items2dict }}"
-
-common_service_operand_requests: "{{ inv_common_service_operand_requests | default([]) }}"

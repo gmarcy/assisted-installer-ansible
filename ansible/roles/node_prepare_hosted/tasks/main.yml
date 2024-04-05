@@ -1,0 +1,9 @@
+---
+
+- name: Add authorized_key for cluster to all nodes
+  include_role:
+    name: add_authorized_key_from_keypair
+  vars:
+    ssh_user: "{{ hostvars['playbook-facts'].remote_user }}"
+    ssh_pubkey: "{{ hostvars[inventory_hostname].keypair_pubkey }}"
+    ssh_comment: "{{ hostvars[inventory_hostname].keypair_comment }}"

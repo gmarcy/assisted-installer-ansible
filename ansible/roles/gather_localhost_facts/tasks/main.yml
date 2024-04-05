@@ -28,11 +28,16 @@
 - when: localhost_spec is defined
   block:
 
-  - name: Load localhost_spec from cli param into a dictionary
-    ansible.builtin.set_fact:
-      localhost_map: "{{ localhost_spec | from_json }}"
+    - name: Load localhost_spec from cli param into a dictionary
+      ansible.builtin.set_fact:
+        localhost_map: "{{ localhost_spec | from_json }}"
 
-  - name: Set facts from localhost_spec
-    set_fact:
-      "{{ item }}": "{{ localhost_map[item] }}"
-    loop: "{{ localhost_map.keys() | default([]) }}"
+    - name: Set facts from localhost_spec
+      set_fact:
+        "{{ item }}": "{{ localhost_map[item] }}"
+      loop: "{{ localhost_map.keys() | default([]) }}"
+
+- name: Set local_keypair_path fact
+  set_fact:
+    local_keypair_path: "{{ ssh_keypairs[ssh_keypair_name].path }}"
+  when: ssh_keypair_name is defined

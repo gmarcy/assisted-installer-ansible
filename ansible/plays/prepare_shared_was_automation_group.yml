@@ -10,8 +10,8 @@
   tags: was_automation
   roles:
   - role: request_tenant_namespace
-    service_nss_operand_namespace: "{{ hostvars['common-services']['common_service_operator_namespace'] }}"
-    service_nss_operand_name: "{{ hostvars['common-services']['common_service_operand_name'] }}"
+    service_nss_operand_name: "{{ common_service_operand_name }}"
+    service_nss_operand_namespace: "{{ common_service_operand_namespace'] }}"
     tenant_namespace: "{{ hostvars['was-automation']['was_automation_namespace'] }}"
     tenant_operator_group: "{{ hostvars['was-automation']['was_automation_operator_group'] }}"
 

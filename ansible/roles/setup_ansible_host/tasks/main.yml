@@ -3,13 +3,13 @@
 - when: "'setup_ansible_host' not in (roles_completed | default([]))"
   block:
 
-    - name: Set _ssh_target fact
+    - name: Set ssh_destination fact
       ansible.builtin.set_fact:
-        _ssh_target: "{{ ansible_ssh_user | default(ssh_username) }}@{{ ansible_ssh_host | default(ssh_hostname) }}"
+        ssh_destination: "{{ ansible_ssh_user | default(ssh_username) }}@{{ ansible_ssh_host | default(ssh_hostname) }}"
 
     - name: Set _ssh_command fact
       ansible.builtin.set_fact:
-        _ssh_command: "ssh -q {{ ansible_ssh_common_args }} {{ ansible_ssh_extra_args | default() }} {{ _ssh_target }}"
+        _ssh_command: "ssh -q {{ ansible_ssh_common_args }} {{ ansible_ssh_extra_args | default() }} {{ ssh_destination }}"
 
     - name: Confirm that we can run ssh to inventory_hostname
       ansible.builtin.command: |
@@ -21,7 +21,7 @@
 
     - name: Provide informative message if ssh connect fails
       ansible.builtin.fail:
-        msg: "ansible setup requires ssh remote access to {{ _ssh_target }}"
+        msg: "ansible setup requires ssh remote access to {{ ssh_destination }}"
       when: _result.stdout is not in ['completed', 'connected']
 
     - name: Set fact if ansible setup host has already been completed
@@ -41,7 +41,7 @@
 
         - name: Provide informative message if sudo on ssh connect fails
           ansible.builtin.fail:
-            msg: "ansible setup requires being able to run sudo for {{ _ssh_target }}"
+            msg: "ansible setup requires being able to run sudo for {{ ssh_destination }}"
           when: _result.stdout != 'sudoer'
 
         - name: Set ansible_python_interpreter
@@ -66,7 +66,7 @@
 
             - name: Provide informative message if python not present on remote host
               ansible.builtin.debug:
-                msg: "ansible setup requires that {{ ansible_python_interpreter }} be installed for {{ _ssh_target }}, will attempt to install it remotely."
+                msg: "ansible setup requires that {{ ansible_python_interpreter }} be installed for {{ ssh_destination }}, will attempt to install it remotely."
 
             - name: Fetch contents of /etc/os-release
               ansible.builtin.command: |
@@ -96,7 +96,7 @@
 
             - name: Provide informative message if python not present on remote host
               ansible.builtin.fail:
-                msg: "ansible setup requires that {{ ansible_python_interpreter }} be installed for {{ _ssh_target }}"
+                msg: "ansible setup requires that {{ ansible_python_interpreter }} be installed for {{ ssh_destination }}"
               when: _result.stdout != ansible_python_interpreter
 
         - name: Confirm that we have ansible host connectivity

@@ -1,7 +1,6 @@
 ---
 
-- when: hostvars['common-services']['common_service_operator_channel'] == 'v4.0'
-  name: Enable all ingress access within namespace through NetworkPolicy
+- name: Enable all ingress access within namespace through NetworkPolicy
   kubernetes.core.k8s:
     api_key: "{{ api_key | default(omit) }}"
     kubeconfig: "{{ kubeconfig_path }}"
@@ -17,54 +16,25 @@
         policyTypes:
           - Ingress
 
-- name: Create Subscription for singlenamespace operator
-  kubernetes.core.k8s:
-    api_key: "{{ api_key | default(omit) }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-    api_version: operators.coreos.com/v1alpha1
-    kind: Subscription
-    name: "{{ was_automation_operator_name }}"
-    namespace: "{{ target_namespace }}"
-    definition:
-      metadata:
-        labels: "{{ labels }}"
-      spec:
-        channel: "{{ operator_channel }}"
-        installPlanApproval: Automatic
-        name: "{{ was_automation_operator_name }}"
-        source: "{{ was_automation_catalog_source_name }}"
-        sourceNamespace: "{{ was_automation_catalog_source_namespace }}"
-    wait: true
-    wait_condition:
-      type: CatalogSourcesUnhealthy
-      status: false
-  vars:
-    key: "{{ 'operators.coreos.com/' + was_automation_operator_name + '.' + target_namespace }}"
-    labels: "{{ [{'key': key, 'value': '' }] | items2dict }}"
-  register: _result
-  when: operator_singlenamespace == true
+- name: Create subscription for singlenamespace or all namespaces operator
+  block:
 
-- name: Create Subscription for all namespaces operator
-  kubernetes.core.k8s:
-    api_key: "{{ api_key | default(omit) }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-    api_version: operators.coreos.com/v1alpha1
-    kind: Subscription
-    name: "{{ was_automation_operator_name }}"
-    namespace: "{{ was_automation_operator_namespace }}"
-    definition:
-      spec:
-        channel: "{{ operator_channel }}"
-        installPlanApproval: Automatic
-        name: "{{ was_automation_operator_name }}"
-        source: "{{ was_automation_catalog_source_name }}"
-        sourceNamespace: "{{ was_automation_catalog_source_namespace }}"
-    wait: true
-    wait_condition:
-      type: CatalogSourcesUnhealthy
-      status: false
-  register: _result
-  when: operator_singlenamespace == false
+    - name: Create Subscription
+      include_role:
+        name: create_target_subscription
+      vars:
+        target_operator_name: "{{ was_automation_operator_name }}"
+        target_operator_namespace: "{{ wsa_operator_namespace }}"
+        target_operator_labels: "{{ wsa_operator_labels or omit }}"
+        target_operator_channel: "{{ was_automation_operator_channel or omit }}"
+        target_catalog_source_name: "{{ was_automation_catalog_source_name }}"
+        target_catalog_source_namespace: "{{ was_automation_catalog_source_namespace }}"
+      register: _result
+
+  vars:
+    wsa_operator_namespace: "{{ target_namespace if operator_singlenamespace else was_automation_operator_namespace }}"
+    wsa_operator_label_key: "{{ 'operators.coreos.com/' + was_automation_operator_name + '.' + wsa_operator_namespace }}"
+    wsa_operator_labels: "{{ [{'key': wsa_operator_label_key, 'value': '' }] | items2dict }}"
 
 - name: Wait for WSA operator controller manager
   kubernetes.core.k8s_info:
@@ -79,15 +49,3 @@
     wait_sleep: 20
     wait_timeout: 300
   register: _result
-
-- name: Wait until all the WSA CSV succeed
-  kubernetes.core.k8s_info:
-    api_key: "{{ api_key | default(omit) }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-    api_version: operators.coreos.com/v1alpha1
-    kind: ClusterServiceVersion
-    namespace: "{{ target_namespace if operator_singlenamespace else was_automation_operator_namespace }}"
-  register: _result
-  delay: 30
-  retries: 120
-  until: (_result.resources | length > 0) and (_result.resources | map(attribute='status.phase') | unique == ['Succeeded'])

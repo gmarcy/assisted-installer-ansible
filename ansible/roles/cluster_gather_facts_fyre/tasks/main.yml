@@ -75,16 +75,16 @@
   changed_when: false
   when: item['hostname'] == fyre_inf_hostname
 
-- name: Clear facts
+- name: Set cluster_status fact
   set_fact:
     cluster_status: "{{ cluster_status | combine({'vms': ''}) }}"
 
 - name: Wait until we can resolve the hostname using DNS
   set_fact:
-    infra_publicip: "{{ lookup('community.general.dig', fyre_inf_hostname) }}"
+    infra_publicip: "{{ lookup('community.general.dig', fyre_inf_hostname, '@9.0.0.2') }}"
   delay: 15
   retries: 40
-  until: lookup('community.general.dig', fyre_inf_hostname) == fyre_inf_public_ip
+  until: lookup('community.general.dig', fyre_inf_hostname, '@9.0.0.2') == fyre_inf_public_ip
 
 - name: Update remaining Fyre OCP Facts
   set_fact:
@@ -147,6 +147,7 @@
         cluster_api_url: "{{ hostvars['cluster-facts']['cluster_api_url'] }}"
         console_username: "{{ hostvars['cluster-facts']['console_username'] }}"
         console_password: "{{ hostvars['cluster-facts']['console_password'] }}"
+      when: authenticate_as_kubeadmin | default(true)
 
     - name: Load kubeconfig from yaml file
       set_fact:

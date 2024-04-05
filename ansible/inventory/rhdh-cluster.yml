@@ -1,0 +1,15 @@
+---
+
+all:
+  children:
+    cluster_operators:
+      hosts:
+        cluster-operators:
+          operators_to_deploy:
+          - name: rhdh
+            namespace: rhdh-operator
+            catalog: redhat-operators
+    developer_hub:
+      hosts:
+        developer-hub:
+          target_namespace: gmarcy-dev

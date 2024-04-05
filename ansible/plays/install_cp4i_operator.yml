@@ -10,5 +10,5 @@
     kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
     target_catalog_source_image: "{{ cp4i_catalog_source_image }}"
     target_catalog_source_image_tag: "{{ cp4i_catalog_source_image_tag }}"
-    operator_channel: "{{ cp4i_operator_channel }}"
+    operator_channel: "{{ cp4i_operator_channel | default(omit) }}"
     target_namespace: "{{ cp4i_namespace }}"

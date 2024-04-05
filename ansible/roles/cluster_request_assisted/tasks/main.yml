@@ -370,6 +370,7 @@
     name: assisted_gather_hosts_facts
   vars:
     cluster_name: "{{ hostvars['cluster-facts']['cluster_name'] }}"
+
 - import_role:
     name: check_stop_after
   vars:

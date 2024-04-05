@@ -1,0 +1,9 @@
+---
+
+- name: Install Developer Hub
+  hosts: developer_hub
+  gather_facts: false
+  roles:
+  - role: install_developer_hub
+    api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+    kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"

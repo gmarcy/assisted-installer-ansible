@@ -1,0 +1,145 @@
+---
+
+- name: Set facts for this role
+  set_fact:
+    cluster_fqdn: "{{ hostvars['cluster-facts']['cluster_fqdn'] }}"
+
+- name: Check for existing developer-hub Backstage instance
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: rhdh.redhat.com/v1alpha1
+    kind: Backstage
+    name: developer-hub
+    namespace: "{{ target_namespace }}"
+  register: _result
+
+- name: Set fact if developer-hub Backstage instance is deployed
+  set_fact:
+    developer_hub_deployed: "{{ _result.resources | map(attribute='status.conditions') | flatten | selectattr('type','equalto','Deployed') | selectattr('status','equalto','True') | length > 0 }}"
+
+- when: not developer_hub_deployed
+  block:
+
+    - name: Create the target_namespace Namespace
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: "{{ target_namespace }}"
+      register: _result
+
+    - name: Create the app-config-rhdh ConfigMap
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: ConfigMap
+        name: app-config-rhdh
+        namespace: "{{ target_namespace }}"
+        definition:
+          data:
+            app-config-rhdh.yaml: |
+              app:
+                title: "Glenn's Red Hat Developer Hub"
+                baseUrl: "https://backstage-developer-hub-{{ target_namespace }}.apps.{{ cluster_fqdn }}"
+              auth:
+                allowGuestAccess: true
+                environment: development
+                providers:
+                  github:
+                    development:
+                      appId: ${GITHUB_APP_APP_ID}
+                      clientId: ${GITHUB_APP_CLIENT_ID}
+                      clientSecret: ${GITHUB_APP_CLIENT_SECRET}
+                      enterpriseInstanceUrl: https://github.ibm.com
+                      webhookUrl: ${GITHUB_APP_WEBHOOK_URL}
+                      webhookSecret: ${GITHUB_APP_WEBHOOK_SECRET}
+                      privateKey: |
+                        ${GITHUB_APP_PRIVATE_KEY}
+              backend:
+                auth:
+                  keys:
+                  - secret: ${BACKEND_SECRET}
+                baseUrl: "https://backstage-developer-hub-{{ target_namespace }}.apps.{{ cluster_fqdn }}"
+                cors:
+                  origin: "https://backstage-developer-hub-{{ target_namespace }}.apps.{{ cluster_fqdn }}"
+                database:
+                  connection:
+                    password: ${POSTGRESQL_ADMIN_PASSWORD}
+                    user: postgres
+              enabled:
+                github: true
+              integrations:
+                github:
+                - host: github.ibm.com
+              signInPage: github
+      register: _result
+
+    - name: Create the dynamic-plugins-rhdh ConfigMap
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: ConfigMap
+        name: dynamic-plugins-rhdh
+        namespace: "{{ target_namespace }}"
+        definition:
+          data:
+            dynamic-plugins.yaml: |
+              includes:
+                - dynamic-plugins.default.yaml
+              plugins:
+                - package: './dynamic-plugins/dist/backstage-plugin-catalog-backend-module-github-dynamic'
+                  disabled: false
+                  pluginConfig: {}
+      register: _result
+
+    - name: Create the secrets-rhdh Secret
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Secret
+        name: secrets-rhdh
+        namespace: "{{ target_namespace }}"
+        definition:
+          data:
+            BACKEND_SECRET: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_backend_secret']) | trim | b64encode }}"
+            GITHUB_APP_APP_ID: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_app_id']) | trim | b64encode }}"
+            GITHUB_APP_CLIENT_ID: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_client_id']) | trim | b64encode }}"
+            GITHUB_APP_CLIENT_SECRET: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_client_secret']) | trim | b64encode }}"
+            GITHUB_APP_WEBHOOK_URL: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_webhook_url']) | trim | b64encode }}"
+            GITHUB_APP_WEBHOOK_SECRET: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_webhook_secret']) | trim | b64encode }}"
+            GITHUB_APP_PRIVATE_KEY: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_private_key']) | trim | b64encode }}"
+            GHE_ACCESS_TOKEN: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_ghe_access_token']) | trim | b64encode }}"
+      register: _result
+
+    - name: Create the developer-hub Backstage instance
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: rhdh.redhat.com/v1alpha1
+        kind: Backstage
+        name: developer-hub
+        namespace: "{{ target_namespace }}"
+        definition:
+          spec:
+            application:
+              appConfig:
+                configMaps:
+                  - name: app-config-rhdh
+                mountPath: /opt/app-root/src
+              dynamicPluginsConfigMapName: dynamic-plugins-rhdh
+              extraEnvs:
+                secrets:
+                  - name: secrets-rhdh
+              extraFiles:
+                mountPath: /opt/app-root/src
+              replicas: 1
+              route:
+                enabled: true
+            database:
+              enableLocalDb: true
+      register: _result

@@ -6,21 +6,24 @@
   pre_tasks:
   - assert:
       that:
-      - hostvars['localhost-facts']['ssh_keypair_name'] is defined and ssh_keypairs[hostvars['localhost-facts']['ssh_keypair_name']] is defined
+      - hostvars['localhost-facts']['local_keypair_path'] is defined
       - remote_hosts_spec is defined or groups['remote_hosts'] is defined
   tasks:
+  - name: Set local_keypair_path fact
+    set_fact:
+      local_keypair_path: "{{ hostvars['localhost-facts']['local_keypair_path'] }}"
   - when: container_run | bool
     block:
     - name: Create ~/.ssh folder if needed
       ansible.builtin.file:
-        path: "{{ ssh_keypairs[hostvars['localhost-facts']['ssh_keypair_name']].path | dirname }}"
+        path: "{{ local_keypair_path | dirname }}"
         state: directory
         mode: '0700'
       changed_when: false
     - name: Copy ssh key secret into ~/.ssh when running in a container
       ansible.builtin.copy:
         content: "{{ lookup('unvault', hostvars['playbook-secrets'][ssh_keypairs[hostvars['localhost-facts']['ssh_keypair_name']].secret]) }}"
-        dest: "{{ ssh_keypairs[hostvars['localhost-facts']['ssh_keypair_name']].path }}"
+        dest: "{{ localhost_keypair_path }}"
         mode: '0600'
       changed_when: false
   - when: remote_hosts_spec is defined
@@ -49,7 +52,7 @@
       ansible.builtin.add_host:
         name: "{{ item }}"
         ansible_connection: 'smart'
-        ansible_ssh_extra_args: "{{ '-F /dev/null -i ' + ssh_keypairs[hostvars['localhost-facts']['ssh_keypair_name']].path }}"
+        ansible_ssh_extra_args: "{{ '-F /dev/null -i ' + hostvars['localhost-facts']['local_keypair_path'] }}"
       loop: "{{ groups['remote_hosts'] }}"
       changed_when: false
 
@@ -58,8 +61,11 @@
   gather_facts: false
   roles:
   - role: setup_ansible_host
-    ssh_hostname: "{{ hostvars[inventory_hostname].ansible_host }}"
-    ssh_username: "{{ hostvars['playbook-facts']['remote_user'] }}"
+    ssh_host: "{{ hostvars[inventory_hostname].ansible_host }}"
+    ssh_user: "{{ hostvars['playbook-facts']['remote_user'] }}"
+  - role: loop_over_roles
+    role_loop: "{{ prepare_remote_host_roles }}"
+    when: prepare_remote_host_roles is defined
   - role: gather_host_facts
     gather_packages_info: false
     gather_services_info: false

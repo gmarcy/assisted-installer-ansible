@@ -94,3 +94,4 @@
         cluster_api_url: "{{ hostvars['cluster-facts']['cluster_api_url'] }}"
         console_username: "{{ hostvars['cluster-facts']['console_username'] }}"
         console_password: "{{ hostvars['cluster-facts']['console_password'] }}"
+      when: authenticate_as_kubeadmin | default(true)

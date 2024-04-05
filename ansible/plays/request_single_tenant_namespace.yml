@@ -15,7 +15,3 @@
     target_namespace: "{{ common_service_operator_namespace }}"
     target_operator_group: "{{ common_service_operator_group }}"
     target_namespaces: "{{ [common_service_operator_namespace, common_service_operand_namespace] | unique }}"
-  tasks:
-  - name: Create fact for common service operand request labels
-    set_fact:
-      common_service_opreq_labels: "{{ common_service_opreq_labels_keyvaluepairs | items2dict }}"

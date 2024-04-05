@@ -26,8 +26,6 @@
       ssh_private_key: "{{ prvkey | b64encode }}"
   no_log: "{{ noLog }}"
   loop:
-  - "{{ inventory_dir }}"
-  - "{{ inventory_dir + '/..' }}"
   - "{{ lookup('env', 'HOME') + '/.ssh' }}"
   loop_control:
     label: "{{ item }}"
@@ -63,7 +61,6 @@
 
 - name: Update cluster facts based upon options
   set_fact:
-    k8s_version: "{{ options['k8s_version'] }}" 
     k8s_inf_nodes: "{{ 1 if (options['k8s_inf_create_node'] | bool) else 0 }}"
     k8s_master_nodes: "{{ options['k8s_master_nodes'] | int }}"
     k8s_worker_nodes: "{{ options['k8s_worker_nodes'] | int }}"
@@ -132,8 +129,8 @@
       debug:
         msg:
         - "{{ 'NAME:               ' + cluster_name }}"
-        - "{{ 'VERSION:            ' + k8s_version }}"
-        - "{{ 'ENGINE:             ' + options['k8s_engine'] }}"
+        - "{{ ('VERSION:            ' + k8s_version) if (k8s_version is defined) else 'UNSPECIFIED' }}"
+        - "{{ ('ENGINE:             ' + options['k8s_engine']) if (options['k8s_engine'] is defined) else 'UNSPECIFIED' }}"
 
     - name: Set local facts for execution of this role
       set_fact:
@@ -362,15 +359,10 @@
   set_fact:
     cluster_details_json: "{{ (cluster_details_response.content | from_json)[cluster_name] }}"
 
-- name: Set fact for engine specific role
-  set_fact:
-    k8s_node_provisioning_role: "{{ 'node_provision_k8s_' + hostvars['k8s-provisioner']['options']['k8s_engine'] }}"
-
 - name: Create node groups
   add_host:
     name: "{{ item.node }}"
     groups: "{{ host_node_groups[host_node_role] }}"
-    node_provisioning_role: "{{ k8s_node_provisioning_role }}"
     ansible_connection: ssh
     ansible_host: "{{ item.node }}"
     ansible_ssh_extra_args: "{{ '-F ' + ssh_config }}"
@@ -399,7 +391,7 @@
 
 - name: Set infra node hostname fact
   set_fact:
-    k8s_infra_hostname: "{{ groups['infra_node'] | default(groups['master_nodes']) | first }}"
+    k8s_infra_hostname: "{{ (groups['infra_node'] if (groups['infra_node'] | default([]) | length > 0) else groups['master_nodes']) | first }}"
 
 - name: Wait until we can resolve the hostname using DNS
   set_fact:
@@ -485,3 +477,8 @@
     vars_inventory: {}
     vars_pre_env: {}
     vars_env: {}
+
+- import_role:
+    name: check_stop_after
+  vars:
+    task_to_check: create-cluster-hosts

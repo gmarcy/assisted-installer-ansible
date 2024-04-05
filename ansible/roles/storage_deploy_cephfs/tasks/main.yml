@@ -264,7 +264,8 @@
       retries: 30
       until: (_result.resources | length > 0) and (_result.resources | map(attribute='status.phase') | unique | difference(['Ready']) | length == 0)
 
-    - name: Create ingress for dashboard
+    - when: create_rook_ceph_mgr_dashboard_ingress | default(false)
+      name: Create ingress for dashboard
       kubernetes.core.k8s:
         api_key: "{{ api_key | default(omit) }}"
         kubeconfig: "{{ kubeconfig_path }}"

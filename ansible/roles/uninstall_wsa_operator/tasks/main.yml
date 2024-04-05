@@ -1,5 +1,9 @@
 ---
 
+# TODO - lookup the install was_automation_operator_version
+- name: Set was_automation_operator_version fact
+  fail: msg="not yet implemented"
+
 - name: Remove the primary CSV for IBM WebSphere Automation Operator
   kubernetes.core.k8s:
     api_key: "{{ api_key | default(omit) }}"

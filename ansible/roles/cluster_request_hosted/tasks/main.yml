@@ -1,0 +1,244 @@
+---
+
+- name: Set facts used in this role
+  set_fact:
+    cluster_dir: "{{ hostvars['cluster-facts']['cluster_dir'] }}"
+    cluster_domain: "{{ hostvars['cluster-facts']['cluster_domain'] }}"
+    cluster_name: "{{ hostvars['cluster-facts']['cluster_name'] }}"
+
+- name: Set ssh_keypair to empty
+  set_fact:
+    ssh_keypair: {}
+
+- name: Set vars_pre_env to default ssh keypair, defaults from group and overrides from inventory
+  set_fact:
+    vars_pre_env: "{{ ssh_keypair | combine(vars_group) | combine(vars_inventory) }}"
+
+- name: Set vars_env to empty
+  set_fact:
+    vars_env: {}
+
+- name: Add values to vars_env for all vars_pre_env keys
+  set_fact:
+    vars_env: "{{ vars_env | combine({key: value}) }}"
+  loop: "{{ vars_pre_env.keys() }}"
+  loop_control:
+    label: "{{ item }}"
+  vars:
+    key: "{{ item }}"
+    value: "{{ lookup('env', item.upper()) | default('') }}"
+  when: value | length > 0
+
+- name: Copy all variables into options map
+  set_fact:
+    options: "{{ vars_pre_env | combine(vars_env) }}"
+
+- name: Update cluster facts based upon options
+  set_fact:
+    k8s_version: "{{ options['k8s_version'] }}" 
+    k8s_inf_nodes: "{{ 1 if (options['k8s_inf_create_node'] | bool) else 0 }}"
+    k8s_master_nodes: "{{ options['k8s_master_nodes'] | int }}"
+    k8s_worker_nodes: "{{ options['k8s_worker_nodes'] | int }}"
+    ssh_config_path: "{{ cluster_dir + '/.ssh/config' }}"
+    ssh_keypair_path: "{{ cluster_dir + '/.ssh/id_' + hostvars['localhost-facts'].ssh_keytype }}"
+    ssh_pubkey_path: "{{ cluster_dir + '/.ssh/id_' + hostvars['localhost-facts'].ssh_keytype + '.pub' }}"
+    ssh_option: '-o StrictHostKeyChecking=no'
+    ssh_username: 'root'
+
+- name: We will need to have either an inf node or only one master node
+  assert:
+    that: k8s_inf_nodes | int == 1 or k8s_master_nodes | int == 1
+
+- name: See if cluster_status.json exists
+  stat:
+    path: "{{ cluster_dir + '/cluster_status.json' }}"
+  register: _result
+
+- when: not _result.stat.exists
+  block:
+
+    - name: Create cluster_dir path
+      file:
+        path: "{{ cluster_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create cluster_status.json with status of absent
+      copy:
+        content: |
+          {
+              "status": "absent"
+          }
+        dest: "{{ cluster_dir + '/cluster_status.json' }}"
+        mode: '0644'
+
+- name: Check to see if a cluster exists with the name we are requesting
+  set_fact:
+    cluster_status_json: "{{ lookup('file', cluster_dir + '/cluster_status.json', errors='ignore', split_lines=false) }}"
+
+- name: Set cluster_status fact
+  set_fact:
+    cluster_status: "{{ cluster_status_json['status'] | default('unknown') }}"
+
+- name: Set cluster_exists fact
+  set_fact:
+    cluster_exists: "{{ cluster_status != 'absent' }}"
+
+- name: Check for error
+  assert:
+    that: cluster_status != 'error'
+  when: cluster_exists
+
+- name: Print a message about the state of the cluster
+  debug:
+    msg: "{{ 'Cluster ' + cluster_name + ((' exists (' + cluster_status + ').') if cluster_exists else ' does not exist.') }}"
+
+- name: Assert that cluster is not being deleted
+  assert:
+    that: cluster_status != 'deleting'
+  when: cluster_exists
+
+- when: not cluster_exists
+  block:
+
+    - name: Print out some of the parameters of the deployment
+      debug:
+        msg:
+        - "{{ 'NAME:               ' + cluster_name }}"
+        - "{{ 'VERSION:            ' + k8s_version }}"
+        - "{{ 'ENGINE:             ' + options['k8s_engine'] }}"
+
+    - name: Set local facts for execution of this role
+      set_fact:
+        k8s_inf_os: "{{ options['k8s_inf_os'] }}"
+        k8s_inf_cpu: "{{ options['k8s_inf_cpu'] }}"
+        k8s_inf_mem: "{{ options['k8s_inf_mem'] }}"
+        k8s_inf_extra_storage: "{{ options['k8s_inf_extra_storage'] }}"
+        k8s_node_os: "{{ options['k8s_node_os'] }}"
+        k8s_master_cpu: "{{ options['k8s_master_cpu'] }}"
+        k8s_master_mem: "{{ options['k8s_master_mem'] }}"
+        k8s_master_extra_storage: "{{ options['k8s_master_extra_storage'] }}"
+        k8s_worker_cpu: "{{ options['k8s_worker_cpu'] }}"
+        k8s_worker_mem: "{{ options['k8s_worker_mem'] }}"
+        k8s_worker_extra_storage: "{{ options['k8s_worker_extra_storage'] }}"
+
+    - name: Ensure empty cluster dir
+      file:
+        path: "{{ cluster_dir }}"
+        mode: '0755'
+        state: "{{ item }}"
+      loop:
+      - absent
+      - directory
+
+- name: Set fact for engine specific role
+  set_fact:
+    k8s_node_provisioning_role: "{{ 'node_provision_hosted_' + hostvars['hosted-provisioner']['options']['k8s_engine'] }}"
+
+- name: Set infra node hostname fact
+  set_fact:
+    k8s_infra_hostname: "{{ (groups['infra_node'] if (groups['infra_node'] | default([]) | length > 0) else groups['master_nodes']) | first }}"
+
+- name: Wait until we can resolve the hostname using DNS
+  set_fact:
+    k8s_infra_publicip: "{{ lookup('community.general.dig', hostvars[k8s_infra_hostname]['fqdn']) }}"
+  until: lookup('community.general.dig', hostvars[k8s_infra_hostname]['fqdn']) == hostvars[k8s_infra_hostname]['publicip']
+
+- name: Set fact for services host
+  set_fact:
+    services_host: "{{ k8s_infra_hostname }}"
+  delegate_to: 'cluster-facts'
+  delegate_facts: true
+
+- name: Set infra node publicip fact
+  set_fact:
+    k8s_infra_publicip: "{{ hostvars[k8s_infra_hostname]['publicip'] }}"
+
+- name: Set infra node privateip fact
+  set_fact:
+    k8s_infra_privateip: "{{ hostvars[k8s_infra_hostname]['privateip'] }}"
+
+- name: Set kubeconfig_path and cluster_api_url facts
+  set_fact:
+    cluster_api_url: "{{ 'https://' + hostvars[k8s_infra_hostname]['fqdn'] + ':6443' }}"
+    kubeconfig_path: "{{ cluster_dir + '/kubeconfig' }}"
+
+- name: Set kubeconfig_path and cluster_api_url facts
+  set_fact:
+    cluster_api_url: "{{ cluster_api_url }}"
+    kubeconfig_path: "{{ kubeconfig_path }}"
+    cluster_fqdn: "{{ hostvars[k8s_infra_hostname]['fqdn'] }}"
+    cluster_publicip: "{{ k8s_infra_publicip }}"
+    cluster_nip_fqdn: "{{ k8s_infra_publicip + '.nip.io' }}"
+  delegate_to: 'cluster-facts'
+  delegate_facts: true
+
+- name: Create folders for ssh_config_path
+  file:
+    path: "{{ ssh_config_path | dirname }}"
+    state: directory
+    mode: '0700'
+
+- name: Create a keypair for this cluster
+  include_role:
+    name: create_keypair_set_facts
+  vars:
+    ssh_path: "{{ ssh_keypair_path }}"
+    ssh_keytype: "{{ hostvars['localhost-facts'].ssh_keytype }}"
+    ssh_comment: "{{ 'ssh access to ' + cluster_name + ' cluster' }}"
+
+- name: Set node_prepare_role and keypair facts for all nodes
+  set_fact:
+    node_prepare_role: node_prepare_hosted
+    keypair_pubkey: "{{ hostvars['hosted-provisioner'].keypair_pubkey }}"
+    keypair_comment: "{{ hostvars['hosted-provisioner'].keypair_comment }}"
+  loop: "{{ groups['all_nodes'] }}"
+  loop_control:
+    loop_var: node_name
+  delegate_to: "{{ node_name }}"
+  delegate_facts: true
+
+- name: Write cluster specific ssh config
+  copy:
+    content: |
+      Host {{ k8s_infra_hostname + ' ' + k8s_infra_hostname + '.' + cluster_domain + ' ' + hostvars[k8s_infra_hostname].ansible_host }}
+          Hostname {{ hostvars[k8s_infra_hostname].ansible_host }}
+          IdentityFile {{ ssh_keypair_path }}
+          IdentitiesOnly yes
+          UserKnownHostsFile /dev/null
+          StrictHostKeyChecking accept-new
+      {% for hostname in groups['cluster_nodes'] %}
+      {% if hostname != k8s_infra_hostname %}
+      
+      Host {{ hostname + ' ' + hostname + '.' + cluster_domain }}
+          IdentityFile {{ ssh_keypair_path }}
+          IdentitiesOnly yes
+          UserKnownHostsFile /dev/null
+          StrictHostKeyChecking accept-new
+          ProxyCommand ssh -q -F {{ ssh_config_path }} {{ ssh_username + '@' + k8s_infra_hostname }} -W %h:%p
+      {% endif %}
+      {% endfor %}
+    dest: "{{ ssh_config_path }}"
+    mode: '0600'
+
+#- name: Write cluster specific ssh private key
+#  copy:
+#    content: |
+#      {{ options['ssh_private_key'] | b64decode | trim }}
+#    dest: "{{ ssh_prvkey }}"
+#    mode: '0600'
+#
+#- name: Write cluster specific ssh public key
+#  copy:
+#    content: |
+#      {{ options['ssh_public_key'] | b64decode | trim }}
+#    dest: "{{ ssh_pubkey }}"
+#    mode: '0644'
+#
+- name: Clear register results
+  set_fact:
+    ssh_keypair: {}
+    vars_group: {}
+    vars_inventory: {}
+    vars_pre_env: {}
+    vars_env: {}

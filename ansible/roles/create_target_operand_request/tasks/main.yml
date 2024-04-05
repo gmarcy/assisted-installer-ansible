@@ -9,8 +9,6 @@
     name: "{{ target_operand_request_name }}"
     namespace: "{{ target_operand_request_namespace }}"
     definition:
-      metadata:
-        labels: "{{ common_service_opreq_labels }}"
       spec:
         requests:
         - operands:

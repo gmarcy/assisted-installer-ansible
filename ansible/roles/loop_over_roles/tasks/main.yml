@@ -1,0 +1,8 @@
+---
+
+- name: "Iterate over roles for {{ inventory_hostname }}"
+  include_role:
+    name: "{{ loop_role_name }}"
+  loop: "{{ role_loop }}"
+  loop_control:
+    loop_var: "loop_role_name"

@@ -19,5 +19,15 @@
     target_catalog_source_image_tag: "{{ common_service_catalog_source_image_tag }}"
     target_catalog_source_publisher: "{{ common_service_catalog_source_publisher }}"
     target_catalog_source_poll_interval: "{{ common_service_catalog_source_poll_interval }}"
+  - role: create_target_catalog_source
+    api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+    kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
+    target_catalog_source_name: cloud-native-postgresql-catalog
+    target_catalog_source_namespace: openshift-marketplace
+    target_catalog_source_display_name: "Cloud Native Postgresql Catalog"
+    target_catalog_source_image: icr.io/cpopen/ibm-cpd-cloud-native-postgresql-operator-catalog@sha256
+    target_catalog_source_image_tag: c96aa2e6bce92f2e5e4874116cf1cc1cdd60676499cd04ab1631462b8b883357
+    target_catalog_source_publisher: IBM
+    target_catalog_source_poll_interval: 45m
 
 - import_playbook: ../plays/request_single_tenant_namespace.yml

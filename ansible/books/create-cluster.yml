@@ -3,4 +3,5 @@
 - import_playbook: ../plays/gather_playbook_facts.yml
 - import_playbook: ../plays/request_cluster.yml
 - import_playbook: ../plays/gather_cluster_facts.yml
+- import_playbook: ../plays/add_pull_secrets.yml
 - import_playbook: ../plays/print_cluster_info.yml

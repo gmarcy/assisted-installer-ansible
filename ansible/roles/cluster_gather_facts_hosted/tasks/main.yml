@@ -1,0 +1,110 @@
+---
+
+- when: k8s_node_provisioning_role is not defined
+  block:
+
+    - name: Set facts used in this role
+      set_fact:
+        cluster_dir: "{{ hostvars['cluster-facts']['cluster_dir'] }}"
+        cluster_name: "{{ hostvars['cluster-facts']['cluster_name'] }}"
+
+    - name: Update cluster facts based upon options
+      set_fact:
+        ssh_config_path: "{{ cluster_dir + '/.ssh/config' }}"
+
+
+    - name: See if cluster_status.json exists
+      stat:
+        path: "{{ cluster_dir + '/cluster_status.json' }}"
+      register: _result
+
+    - when: not _result.stat.exists
+      block:
+
+        - name: Create cluster_dir path
+          file:
+            path: "{{ cluster_dir }}"
+            state: directory
+            mode: '0755'
+
+        - name: Create cluster_status.json with status of absent
+          copy:
+            content: |
+              {
+                  "status": "absent"
+              }
+            dest: "{{ cluster_dir + '/cluster_status.json' }}"
+            mode: '0644'
+
+    - name: Check to see if a cluster exists with the name we are requesting
+      set_fact:
+        cluster_status_json: "{{ lookup('file', cluster_dir + '/cluster_status.json', errors='ignore', split_lines=false) }}"
+
+    - name: Set cluster_status fact
+      set_fact:
+        cluster_status: "{{ cluster_status_json['status'] | default('unknown') }}"
+
+    - name: Set cluster_exists fact
+      set_fact:
+        cluster_exists: "{{ cluster_status != 'absent' }}"
+
+    - name: Check for error
+      assert:
+        that: cluster_status != 'error'
+      when: cluster_exists
+
+    - name: Print a message about the state of the cluster
+      debug:
+        msg: "{{ 'Cluster ' + cluster_name + ((' exists (' + cluster_status + ').') if cluster_exists else ' does not exist.') }}"
+
+    - name: Set infra node hostname fact
+      set_fact:
+        k8s_infra_hostname: "{{ (groups['infra_node'] if (groups['infra_node'] | default([]) | length > 0) else groups['master_nodes']) | first }}"
+
+    - name: Set infra node publicip fact
+      set_fact:
+        k8s_infra_publicip: "{{ hostvars[k8s_infra_hostname]['publicip'] }}"
+
+    - name: Set infra node privateip fact
+      set_fact:
+        k8s_infra_privateip: "{{ hostvars[k8s_infra_hostname]['privateip'] }}"
+
+- name: Set kubeconfig_path and cluster_api_url facts
+  set_fact:
+    cluster_api_url: "{{ 'https://' + hostvars[k8s_infra_hostname]['fqdn'] + ':6443' }}"
+    kubeconfig_path: "{{ cluster_dir + '/kubeconfig' }}"
+
+- name: Set kubeconfig_path and cluster_api_url facts
+  set_fact:
+    cluster_api_url: "{{ cluster_api_url }}"
+    kubeconfig_path: "{{ kubeconfig_path }}"
+    cluster_fqdn: "{{ hostvars[k8s_infra_hostname]['fqdn'] }}"
+    cluster_publicip: "{{ k8s_infra_publicip }}"
+  delegate_to: 'cluster-facts'
+  delegate_facts: true
+
+- name: Check to see if we already have fetched the kubeconfig
+  stat:
+    path: "{{ kubeconfig_path }}"
+  register: _result_stat
+
+- when: not _result_stat.stat.exists
+  block:
+
+    - name: Create cluster_dir folder
+      file:
+        path: "{{ cluster_dir }}"
+        state: directory
+
+    - name: Load contents of kubeconfig
+      command:
+        cat ~/.kube/config
+      register: _result
+      delegate_to: "{{ k8s_infra_hostname }}"
+
+    - name: Write local kubeconfig
+      copy:
+        content: |
+          {{ _result.stdout }}
+        dest: "{{ kubeconfig_path }}"
+        mode: '0600'
