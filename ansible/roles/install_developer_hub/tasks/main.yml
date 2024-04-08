@@ -74,6 +74,8 @@
               integrations:
                 github:
                 - host: github.ibm.com
+                  apiBaseUrl: https://github.ibm.com/api/v3
+                  token: ${GHE_ACCESS_TOKEN}
               signInPage: github
       register: _result
 
