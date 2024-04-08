@@ -7,5 +7,5 @@ all:
       inv_value_fact: "{{ hostvars['localhost'].prefix_url + '/special-value' }}"
       inv_value: "{{ inv_value_fact }}"
   vars:
-    actual_value: "{{ inv_value }}"
+    actual_value: "{{ inv_value | default('some-default') }}"
     indirect_value: "{{ hostvars['localhost'].inv_value }}"
