@@ -56,6 +56,27 @@
   roles:
   - role: load_playbook_secrets
 
+- name: Copy secret for ssh_keypair_name to local_keypair_path when running in container
+  hosts: localhost_facts
+  become: false
+  gather_facts: false
+  tags: playbook_facts
+  tasks:
+  - when: hostvars['playbook-facts'].container_run | bool
+    block:
+    - name: Create ~/.ssh folder if needed
+      ansible.builtin.file:
+        path: "{{ local_keypair_path | dirname }}"
+        state: directory
+        mode: '0700'
+      changed_when: false
+    - name: Copy ssh key secret into ~/.ssh when running in a container
+      ansible.builtin.copy:
+        content: "{{ lookup('unvault', hostvars['playbook-secrets'][ssh_keypairs[hostvars['localhost-facts']['ssh_keypair_name']].secret]) }}"
+        dest: "{{ local_keypair_path }}"
+        mode: '0600'
+      changed_when: false
+
 - name: "Gather additional facts using playbook_gatherer when requested"
   hosts: "{{ hostvars['playbook-facts']['playbook_gatherer'] | default('localhost') }}"
   become: false

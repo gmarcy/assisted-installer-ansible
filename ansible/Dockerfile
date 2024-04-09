@@ -23,7 +23,11 @@ ENV PATH $HOME/.local/bin:$PATH
 RUN set -x && \
     python3 -m pip install --no-cache-dir --user --upgrade pip && \
     python3 -m pip install --no-cache-dir --user --upgrade ansible && \
-    python3 -m pip install --no-cache-dir --user --upgrade netaddr
+    python3 -m pip install --no-cache-dir --user --upgrade netaddr && \
+    python3 -m pip install --no-cache-dir --user --upgrade dnspython && \
+    python3 -m pip install --no-cache-dir --user --upgrade kubernetes && \
+    python3 -m pip install --no-cache-dir --user --upgrade requests && \
+    python3 -m pip install --no-cache-dir --user --upgrade requests-oauthlib
 
 COPY --chown=${USER}:0 . .
 

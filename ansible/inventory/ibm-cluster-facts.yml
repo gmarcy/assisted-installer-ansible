@@ -13,6 +13,15 @@ all:
               description: "3 Day Test Token"
               include_reference_token: "true"
               expires_in: "259200"
+    localhost_facts:
+      hosts:
+        localhost-facts:
+          inv_ssh_keytype: rsa
+          ssh_keypair_name: fyre
+          ssh_keypairs:
+            fyre:
+              path: "{{ local_home + '/.ssh/id_' + ssh_keytype }}"
+              secret: "fyre_ssh_key"
     cluster_facts:
       hosts:
         cluster-facts:

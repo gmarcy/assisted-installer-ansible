@@ -2,10 +2,17 @@
 
 cluster_download_url: "{{ 'http://downloads-openshift-console.apps.' + cluster_name + '.' + cluster_domain }}"
 
+client_arch_map:
+  aarch64: arm64
+  amd64: amd64
+  arm64: arm64
+  ppc64le: ppc64le
+  s390x: s390x
+
 cluster_client_tools:
   linux:
-    url: "{{ cluster_download_url + '/' + client_arch + '/linux/oc.tar' }}"
+    url: "{{ cluster_download_url + '/' + client_arch_map[client_arch] + '/linux/oc.tar' }}"
   mac:
-    url: "{{ cluster_download_url + '/' + client_arch + '/mac/oc.zip' }}"
+    url: "{{ cluster_download_url + '/' + client_arch_map[client_arch] + '/mac/oc.zip' }}"
   windows:
-    url: "{{ cluster_download_url + '/' + client_arch + '/windows/oc.zip' }}"
+    url: "{{ cluster_download_url + '/' + client_arch_map[client_arch] + '/windows/oc.zip' }}"
