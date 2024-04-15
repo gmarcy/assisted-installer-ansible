@@ -2,6 +2,15 @@
 
 all:
   children:
+    cluster_facts:
+      hosts:
+        cluster-facts:
+          w3id_cluster_admins:
+          - gmarcy@us.ibm.com
+          - ebanda@us.ibm.com
+          - grace.jansen1@ibm.com
+          - Prejith.J@ibm.com
+          - daniel.guinan@ibm.com
     cluster_operators:
       hosts:
         cluster-operators:

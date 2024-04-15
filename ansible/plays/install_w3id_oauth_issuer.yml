@@ -57,6 +57,5 @@
       kind: Group
       name: w3id-cluster-admins
       definition:
-        users:
-        - gmarcy@us.ibm.com
+        users: "{{ w3id_cluster_admins }}"
     register: _result

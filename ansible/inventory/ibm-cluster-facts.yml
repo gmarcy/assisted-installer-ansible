@@ -25,6 +25,8 @@ all:
     cluster_facts:
       hosts:
         cluster-facts:
+          w3id_cluster_admins:
+          - gmarcy@us.ibm.com
           cluster_secrets_role: generate_artifactory_token
           artifactory_url: docker-na-public.artifactory.swg-devops.com
           artifactory_fyre_proxies:
