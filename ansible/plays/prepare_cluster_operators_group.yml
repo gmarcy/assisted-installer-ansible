@@ -1,7 +1,7 @@
 ---
 
 - name: Prepare Cluster Operators Group
-  hosts: cluster_operators
+  hosts: cluster-operators
   gather_facts: false
   tags: cluster_operators
   tasks:

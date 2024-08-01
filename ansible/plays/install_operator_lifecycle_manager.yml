@@ -1,7 +1,7 @@
 ---
 
 - name: Install Operator Lifecycle Manager
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: operator_framework
   roles:

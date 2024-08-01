@@ -2,205 +2,62 @@
 
 all:
   children:
-    playbook_secrets:
-      hosts:
-        playbook-secrets:
-          inv_secrets_dir: "{{ lookup('env', 'HOME') + '/.ssh/.ansible/.secrets' }}"
-          artifactory_generate_access_token:
-            url: "https://na.artifactory.swg-devops.com/access/api/v1/tokens"
-            body:
-              audience: "jfrt@*"
-              description: "3 Day Test Token"
-              include_reference_token: "true"
-              expires_in: "259200"
-    localhost_facts:
-      hosts:
-        localhost-facts:
-          inv_ssh_keytype: rsa
-          ssh_keypair_name: fyre
-          ssh_keypairs:
-            fyre:
-              path: "{{ local_home + '/.ssh/id_' + ssh_keytype }}"
-              secret: "fyre_ssh_key"
-    cluster_facts:
-      hosts:
-        cluster-facts:
-          w3id_cluster_admins:
-          - gmarcy@us.ibm.com
-          cluster_secrets_role: generate_artifactory_token
-          artifactory_url: docker-na-public.artifactory.swg-devops.com
-          artifactory_fyre_proxies:
-            rtp: docker-na-proxy-rtp2.artifactory.swg-devops.com
-            svl: docker-na-proxy-svl3.artifactory.swg-devops.com
-          fyre_proxy: "{{ artifactory_fyre_proxies[hostvars['fyre-provisioner']['fyre_site']] }}"
-          pull_secrets:
-          - key: 'cp.stg.icr.io'
-            username: "{{ hostvars['playbook-secrets']['cp_stg_username'] }}"
-            password: "{{ hostvars['playbook-secrets']['cp_stg_password'] }}"
-            email: 'unused'
-          - key: 'cp.icr.io'
-            username: "{{ hostvars['playbook-secrets']['cp_username'] }}"
-            password: "{{ hostvars['playbook-secrets']['cp_password'] }}"
-            email: 'unused'
-          - key: 'us.icr.io'
-            username: "{{ hostvars['playbook-secrets']['cloudrock_devops_user'] }}"
-            password: "{{ hostvars['playbook-secrets']['cloudrock_devops_apikey'] }}"
-            email: 'unused'
-          - key: 'icr.io'
-            username: "{{ hostvars['playbook-secrets']['cloudrock_devops_user'] }}"
-            password: "{{ hostvars['playbook-secrets']['cloudrock_devops_apikey'] }}"
-            email: 'unused'
-          - key: 'docker.io'
-            username: "{{ hostvars['playbook-secrets']['docker_io_user'] }}"
-            password: "{{ hostvars['playbook-secrets']['docker_io_password'] }}"
-            email: 'unused'
-          - key: "{{ artifactory_url }}"
-            username: "{{ hostvars['playbook-secrets']['artifactory_user'] }}"
-            password: "{{ hostvars['playbook-secrets']['artifactory_token'] }}"
-            email: 'unused'
-          - key: "{{ fyre_proxy }}"
-            username: "{{ hostvars['playbook-secrets']['artifactory_user'] }}"
-            password: "{{ hostvars['playbook-secrets']['artifactory_token'] }}"
-            email: 'unused'
-          mirror_configs:
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp/cp4i' }}"
-            source: cp.icr.io/cp/cp4i
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp/icp4i' }}"
-            source: cp.icr.io/cp/icp4i
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp/integration' }}"
-            source: cp.icr.io/cp/integration
-          - mirrors:
-            - "{{ artifactory_url + '/wasliberty-intops-docker-local/cp' }}"
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            source: icr.io/cpopen
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            source: icr.io/cpopen/cpfs
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            source: icr.io/appc-dev
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp/datapower' }}"
-            source: cp.icr.io/cp/datapower
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp/apic' }}"
-            source: cp.icr.io/cp/apic
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp/ai-foundation' }}"
-            source: cp.icr.io/cp
-          mirror_configs_old:
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            source: cp.icr.io/cp
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            source: icr.io/cpopen
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-cloudpak-team-cp-cpstgicr-docker-remote/cp' }}"
-            source: cp.stg.icr.io/cp
-          - mirrors:
-            - "{{ fyre_proxy + '/ecm-containerization-docker-local' }}"
-            source: cp.icr.io/cp
-          - mirrors:
-            - "{{ fyre_proxy + '/hyc-dba-base-image-docker-local' }}"
-            source: icr.io/cpopen
-          #- mirrors:
-          #  - cp.stg.icr.io/cp
-          #  - "{{ artifactory_url + '/wasliberty-intops-docker-local/cp' }}"
-          #  - "{{ artifactory_url + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  - "{{ fyre_proxy + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  source: icr.io/cpopen
-          #- mirrors:
-          #  - "{{ artifactory_url + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  - "{{ fyre_proxy + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  source: quay.io/opencloudio
-          #- mirrors:
-          #  - "{{ artifactory_url + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  - "{{ fyre_proxy + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  source: icr.io/cpopen/cpfs
-          #- mirrors:
-          #  - "{{ artifactory_url + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  - "{{ fyre_proxy + '/hyc-cloud-private-daily-docker-local/ibmcom' }}"
-          #  source: cp.icr.io/cp/cpd
-          #- mirrors:
-          #  - cp.stg.icr.io/cp
-          #  - "{{ artifactory_url + '/wasliberty-intops-docker-local/cp' }}"
-          #  source: cp.icr.io/cp
-          #- mirrors:
-          #  - cp.stg.icr.io/cp
-          #  - "{{ artifactory_url + '/wasliberty-intops-docker-local/cp' }}"
-          #  source: docker.io/ibmcom
-          k8s_k3s_registries_template: |
-            mirrors:
-              "cp.icr.io":
-                endpoint:
-                  - "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}"
-                rewrite:
-                  "(.*)": "wasliberty-intops-docker-local/ibmcom/$1"
-              "icr.io":
-                endpoint:
-                  - "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}"
-                rewrite:
-                  "^cpopen/([0-9abd-z].*)": "hyc-cloud-private-daily-docker-local/ibmcom/$1"
-                  "^cpopen/(c[0-9a-oq-z].*)": "hyc-cloud-private-daily-docker-local/ibmcom/$1"
-                  "^cpopen/(cp[0-9a-eg-z].*)": "hyc-cloud-private-daily-docker-local/ibmcom/$1"
-                  "^cpopen/cpfs/(.*)": "hyc-cloud-private-daily-docker-local/ibmcom/$1"
-              "quay.io":
-                endpoint:
-                  - "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}"
-                rewrite:
-                  "^opencloudio/(.*)": "hyc-cloud-private-daily-docker-local/ibmcom/$1"
-              "docker.io":
-                endpoint:
-                  - "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}"
-                rewrite:
-                  "^ibmcom/(.*)": "wasliberty-intops-docker-local/cp/$1"
-            configs:
-              "cp.stg.icr.io":
-                auth:
-                  username: {{ lookup('unvault', hostvars['playbook-secrets']['cp_stg_username']) | trim }}
-                  password: {{ lookup('unvault', hostvars['playbook-secrets']['cp_stg_password']) | trim }}
-                tls:
-                  insecure_skip_verify: true
-              "cp.icr.io":
-                auth:
-                  username: {{ lookup('unvault', hostvars['playbook-secrets']['cp_username']) | trim }}
-                  password: {{ lookup('unvault', hostvars['playbook-secrets']['cp_password']) | trim }}
-                tls:
-                  insecure_skip_verify: true
-              "docker.io":
-                auth:
-                  username: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_user']) | trim }}
-                  password: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_password']) | trim }}
-                tls:
-                  insecure_skip_verify: true
-              "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}":
-                auth:
-                  username: {{ lookup('unvault', hostvars['playbook-secrets']['artifactory_user']) | trim }}
-                  password: {{ lookup('unvault', hostvars['playbook-secrets']['artifactory_token']) | trim }}
-                tls:
-                  insecure_skip_verify: true
-    common_services:
-      hosts:
-        common-services:
-          #artifactory_url: docker-na-public.artifactory.swg-devops.com
-          #inv_common_service_catalog_source_image_cs4: "{{ artifactory_url + '/hyc-cloud-private-daily-docker-local/ibmcom/ibm-common-service-catalog' }}"
-          inv_common_service_catalog_source_image_cs4: 'icr.io/cpopen/ibm-common-service-catalog'
-          inv_common_service_catalog_source_image_tag_cs4: "4.2"
-    integration_platform:
-      hosts:
-        integration-platform:
-          inv_cp4i_catalog_source_image_cs4: 'cp.stg.icr.io/cp/ibm-integration-platform-navigator-aas-catalog'
-          inv_cp4i_catalog_source_image_tag_cs4: '7.0.3-2023-03-06-1501-1b64a22e-amd64-aas@sha256:7f9ab7ec3105d749f018fc4d707b2d0e7c6f30889f705beeeed25acd53db1fbc'
-    was_automation:
-      hosts:
-        was-automation:
-          artifactory_url: docker-na-public.artifactory.swg-devops.com
-          inv_was_automation_catalog_source_image_cs3: "{{ artifactory_url + '/wasliberty-intops-docker-local/cp/websphere-automation-operator-catalog' }}"
-          inv_was_automation_catalog_source_image_tag_cs3: 'stable'
-          inv_was_automation_catalog_source_image_cs4: "{{ artifactory_url + '/wasliberty-intops-docker-local/cp/websphere-automation-operator-catalog' }}"
-          inv_was_automation_catalog_source_image_tag_cs4: 'stable_cs4'
+    inventory_hosts:
+
+ungrouped:
+  hosts:
+    cluster-facts:
+      w3id_cluster_admins:
+      - gmarcy@us.ibm.com
+      cluster_secrets_role: generate_artifactory_token
+      artifactory_url: docker-na-public.artifactory.swg-devops.com
+      artifactory_fyre_proxies:
+        rtp: docker-na-proxy-rtp2.artifactory.swg-devops.com
+        svl: docker-na-proxy-svl3.artifactory.swg-devops.com
+      fyre_proxy: "{{ artifactory_fyre_proxies[hostvars['fyre-provisioner']['fyre_site']] }}"
+      pull_secrets:
+      - key: 'docker.io'
+        username: "{{ hostvars['playbook-secrets']['docker_io_user'] }}"
+        password: "{{ hostvars['playbook-secrets']['docker_io_password'] }}"
+        email: 'unused'
+      - key: "{{ artifactory_url }}"
+        username: "{{ hostvars['playbook-secrets']['artifactory_user'] }}"
+        password: "{{ hostvars['playbook-secrets']['artifactory_token'] }}"
+        email: 'unused'
+      - key: "{{ fyre_proxy }}"
+        username: "{{ hostvars['playbook-secrets']['artifactory_user'] }}"
+        password: "{{ hostvars['playbook-secrets']['artifactory_token'] }}"
+        email: 'unused'
+      k8s_k3s_registries_template: |
+        mirrors:
+        configs:
+          "docker.io":
+            auth:
+              username: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_user']) | trim }}
+              password: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_password']) | trim }}
+            tls:
+              insecure_skip_verify: true
+          "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}":
+            auth:
+              username: {{ lookup('unvault', hostvars['playbook-secrets']['artifactory_user']) | trim }}
+              password: {{ lookup('unvault', hostvars['playbook-secrets']['artifactory_token']) | trim }}
+            tls:
+              insecure_skip_verify: true
+    cmdline-facts:
+    localhost-facts:
+      inv_ssh_keytype: rsa
+      ssh_keypair_name: fyre
+      ssh_keypairs:
+        fyre:
+          path_prefix: ""
+          secret: "fyre_ssh_key"
+    playbook-facts:
+    playbook-secrets:
+      inv_secrets_dir: "{{ lookup('env', 'HOME') + '/.ssh/.ansible/.secrets' }}"
+      artifactory_generate_access_token:
+        url: "https://na.artifactory.swg-devops.com/access/api/v1/tokens"
+        body:
+          audience: "jfrt@*"
+          description: "3 Day Test Token"
+          include_reference_token: "true"
+          expires_in: "259200"

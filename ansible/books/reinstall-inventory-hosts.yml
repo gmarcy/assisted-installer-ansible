@@ -1,0 +1,4 @@
+---
+
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.reinstall_inventory_hosts

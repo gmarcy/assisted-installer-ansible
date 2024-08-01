@@ -1,0 +1,11 @@
+---
+
+ungrouped:
+  hosts:
+    cluster-storage:
+      storage_provisioner: 'rook-cephfs'
+      provisioning_role: 'storage_deploy_cephfs'
+      deprovisioning_role: 'storage_remove_cephfs'
+      inv_rook_ceph_release: v1.10.4
+      inv_default_storage_class: "{{ cephfs_storage_class }}"
+      inv_default_block_class: "{{ cephfs_block_class }}"

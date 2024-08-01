@@ -1,6 +1,5 @@
 ---
 
-- import_playbook: ../plays/gather_playbook_facts.yml
-- import_playbook: ../plays/gather_cluster_facts.yml
-- import_playbook: ../plays/prepare_cluster_storage_group.yml
-- import_playbook: ../plays/remove_storage.yml
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.gather_cluster_facts
+- import_playbook: gmarcy.ansible.remove_storage

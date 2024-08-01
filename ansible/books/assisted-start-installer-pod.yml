@@ -1,4 +1,4 @@
 ---
 
-- import_playbook: ../plays/gather_playbook_facts.yml
-- import_playbook: ../plays/assisted_setup_installer.yml
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.assisted_setup_installer

@@ -1,0 +1,88 @@
+---
+
+- name: Set facts for this role
+  set_fact:
+    target_namespace: 'argocd'
+    clusters_basedir: "{{ hostvars['cluster-facts']['clusters_basedir'] }}"
+    clusters_shared_kubeconfig_path: "{{ hostvars['cluster-facts']['clusters_shared_kubeconfig_path'] }}"
+
+- when: argocd_bearer_token is not defined
+  block:
+
+    - name: Set argocd_admin_password fact
+      set_fact:
+        argocd_admin_password: "{{ lookup('file', clusters_basedir + '/' + controller_cluster + '/.argocd-initial-admin-secret', split_lines=false) }}"
+
+    - name: Obtain a session token for ArgoCD API
+      uri:
+        url: "{{ argocd_server + '/api/v1/session' }}"
+        method: POST
+        body_format: json
+        body:
+          username: 'admin'
+          password: "{{ argocd_admin_password | b64decode }}"
+        validate_certs: false
+      register: _result
+
+    - name: Set argocd_bearer_token fact
+      set_fact:
+        argocd_bearer_token: "{{ _result.json.token }}"
+
+- name: Get cluster configuration for target clusters
+  uri:
+    url: "{{ argocd_server + '/api/v1/clusters?name=' + target_cluster }}"
+    method: GET
+    headers:
+      Authorization: "{{ 'Bearer ' + argocd_bearer_token }}"
+    validate_certs: false
+  register: _result
+  loop: "{{ target_clusters.keys() }}"
+  loop_control:
+    loop_var: target_cluster
+
+- name: Set tlsClientConfigs fact
+  set_fact:
+    tlsClientConfigs: "{{ tlsClientConfigs | default([]) + [tlsClientConfig] }}"
+  loop: "{{ _result.results | map(attribute='json.items') }}"
+  vars:
+    tlsClientConfig: "{{ 'MISSING' if (item | type_debug == 'NoneType') else (item | first).config.tlsClientConfig }}"
+
+- when: shared_kubeconfig is not defined
+  name: Set shared_kubeconfig fact
+  set_fact:
+    shared_kubeconfig: "{{ lookup('file', clusters_shared_kubeconfig_path, split_lines=false) | from_yaml }}"
+
+- name: Set clusterClientConfig fact
+  add_host:
+    host: "{{ target_cluster }}"
+    clusterClientConfig:
+      caData: "{{ shared_kubeconfig.clusters | selectattr('name', '==', target_cluster) | map(attribute='cluster.certificate-authority-data') | first }}"
+      certData: "{{ shared_kubeconfig.users | selectattr('name', '==', target_cluster) | map(attribute='user.client-certificate-data') | first }}"
+      keyData: "{{ shared_kubeconfig.users | selectattr('name', '==', target_cluster) | map(attribute='user.client-key-data') | first }}"
+      insecure: false
+  loop: "{{ target_clusters.keys() }}"
+  loop_control:
+    loop_var: target_cluster
+
+- name: Configure argocd for clusters out of sync
+  uri:
+    url: "{{ argocd_server + '/api/v1/clusters?upsert=true' }}"
+    method: POST
+    headers:
+      Authorization: "{{ 'Bearer ' + argocd_bearer_token }}"
+    body_format: json
+    body:
+      name: "{{ target_cluster }}"
+      server: "{{ target_clusters[target_cluster].server }}"
+      config:
+        tlsClientConfig: "{{ clusterClientConfig }}"
+    validate_certs: false
+  register: _result
+  loop: "{{ target_clusters.keys() }}"
+  loop_control:
+    loop_var: target_cluster
+    extended: true
+  vars:
+    tlsClientConfig: "{{ tlsClientConfigs[ansible_loop.index0] }}"
+    clusterClientConfig: "{{ hostvars[target_cluster].clusterClientConfig }}"
+  when: (tlsClientConfig == 'MISSING') or (tlsClientConfig.caData != clusterClientConfig.caData) or (tlsClientConfig.certData != clusterClientConfig.certData)

@@ -1,0 +1,292 @@
+---
+all:
+  hosts:
+    edge2a:
+      ansible_connection: "ssh"
+      ansible_host: "edge2a.lab.gmarcy.com"
+      ansible_ssh_user: "khadas"
+      cluster_name: khadas-cluster
+      cluster_role: "master"
+      fqdn: "edge2a.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.230"
+      short_hostname: "edge2a"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+    edge2b:
+      ansible_connection: "ssh"
+      ansible_host: "edge2b.lab.gmarcy.com"
+      ansible_ssh_user: "khadas"
+      cluster_name: khadas-cluster
+      cluster_role: "master"
+      fqdn: "edge2b.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.231"
+      short_hostname: "edge2b"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+    edge2c:
+      ansible_connection: "ssh"
+      ansible_host: "edge2c.lab.gmarcy.com"
+      ansible_ssh_user: "khadas"
+      cluster_name: khadas-cluster
+      cluster_role: "master"
+      fqdn: "edge2c.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.232"
+      short_hostname: "edge2c"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+    netsvcs:
+      ansible_connection: "ssh"
+      ansible_host: "netsvcs.lab.gmarcy.com"
+      ansible_ssh_user: "core"
+      cluster_name: netsvcs-cluster
+      cluster_role: "master"
+      fqdn: "netsvcs.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.253"
+      short_hostname: "netsvcs"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+      - install_keepalived
+      keepalived:
+        config:
+          notification_email_to: sysadmin@gmarcy.com
+          notification_email_from: keepalived@netsvcs.lab.gmarcy.com
+          smtp_server: 127.0.0.1
+          router_id: PXE_BOOTING
+          vrrp_instance_state: MASTER
+          vrrp_instance_priority: 100
+          vrrp_instances:
+          - interface: enp2s0
+            virtual_router_id: 222
+            unicast_src_ip: 192.168.222.253
+            unicast_peer_ip: 192.168.222.214
+            vip: 192.168.222.254
+          - interface: enp3s0
+            virtual_router_id: 111
+            unicast_src_ip: 192.168.111.253
+            unicast_peer_ip: 192.168.111.214
+            vip: 192.168.111.254
+          - interface: enp4s0
+            virtual_router_id: 123
+            unicast_src_ip: 192.168.123.253
+            unicast_peer_ip: 192.168.123.214
+            vip: 192.168.123.254
+          - interface: enp5s0
+            virtual_router_id: 234
+            unicast_src_ip: 192.168.234.253
+            unicast_peer_ip: 192.168.234.214
+            vip: 192.168.234.254
+          virtual_servers:
+          - vip: 192.168.222.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.222.214
+            - ip: 192.168.222.253
+          - vip: 192.168.111.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.111.214
+            - ip: 192.168.111.253
+          - vip: 192.168.123.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.123.214
+            - ip: 192.168.123.253
+          - vip: 192.168.234.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.234.214
+            - ip: 192.168.234.253
+        real_server_check:
+          TCP_CHECK {
+            connect_timeout 5
+          }
+    nuc8:
+      ansible_connection: "ssh"
+      ansible_host: "nuc8.lab.gmarcy.com"
+      ansible_ssh_user: "core"
+      cluster_name: nuc8-cluster
+      cluster_role: "master"
+      fqdn: "nuc8.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.212"
+      short_hostname: "nuc8"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+    nuc10:
+      ansible_connection: "ssh"
+      ansible_host: "nuc10.lab.gmarcy.com"
+      ansible_ssh_user: "core"
+      cluster_name: nuc10-cluster
+      cluster_role: "master"
+      fqdn: "nuc10.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.214"
+      short_hostname: "nuc10"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+      - install_keepalived
+      keepalived:
+        config:
+          notification_email_to: sysadmin@gmarcy.com
+          notification_email_from: keepalived@nuc10.lab.gmarcy.com
+          smtp_server: 127.0.0.1
+          router_id: PXE_BOOTING
+          vrrp_instance_state: BACKUP
+          vrrp_instance_priority: 50
+          vrrp_instances:
+          - interface: eno1
+            virtual_router_id: 222
+            unicast_src_ip: 192.168.222.214
+            unicast_peer_ip: 192.168.222.253
+            vip: 192.168.222.254
+          - interface: enp57s0u1
+            virtual_router_id: 111
+            unicast_src_ip: 192.168.111.214
+            unicast_peer_ip: 192.168.111.253
+            vip: 192.168.111.254
+          - interface: enp0s20f0u1
+            virtual_router_id: 123
+            unicast_src_ip: 192.168.123.214
+            unicast_peer_ip: 192.168.123.253
+            vip: 192.168.123.254
+          - interface: enp0s20f0u2
+            virtual_router_id: 234
+            unicast_src_ip: 192.168.234.214
+            unicast_peer_ip: 192.168.234.253
+            vip: 192.168.234.254
+          virtual_servers:
+          - vip: 192.168.222.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.222.253
+            - ip: 192.168.222.214
+          - vip: 192.168.111.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.111.253
+            - ip: 192.168.111.214
+          - vip: 192.168.123.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.123.253
+            - ip: 192.168.123.214
+          - vip: 192.168.234.254
+            port: 8181
+            protocol: TCP
+            real_servers:
+            - ip: 192.168.234.253
+            - ip: 192.168.234.214
+        real_server_check: '
+          TCP_CHECK {
+            connect_timeout 5
+          }'
+
+cluster_provisioners:
+  vars:
+    post_provisioning_roles:
+      - "cluster_deploy_secrets"
+  children:
+    hosted_provisioners:
+      vars:
+        provisioning_role: 'cluster_request_hosted'
+        deprovisioning_role: 'cluster_cleanup_hosted'
+        cluster_facts_role: 'cluster_gather_facts_hosted'
+        cluster_description: 'Kubernetes K3S Cluster'
+        deploy_infra_services: false
+        k8s_k3s_registries_template: |
+          configs:
+            "docker.io":
+              auth:
+                username: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_user']) | trim }}
+                password: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_password']) | trim }}
+              tls:
+                insecure_skip_verify: true
+
+ungrouped:
+  hosts:
+    argocd-clusters:
+      netsvcs-cluster:
+        server: https://192.168.222.253.nip.io:6443
+      nuc8-cluster:
+        server: https://192.168.222.212.nip.io:6443
+      nuc10-cluster:
+        server: https://192.168.222.214.nip.io:6443
+    playbook-facts:
+      inventory_hosts:
+      - edge2a
+      - edge2b
+      - edge2c
+      - netsvcs
+      - nuc8
+      - nuc10
+    cluster-facts:
+      clusters:
+        khadas-cluster:
+          cluster_name: "khadas-cluster"
+          provisioner_group: hosted_provisioners
+          master_nodes:
+          - edge2a
+          - edge2b
+          - edge2c
+          vars_inventory:
+            k8s_engine: k3s
+            k8s_vip_addr: 192.168.222.234
+            k8s_inf_create_node: false
+            k8s_master_nodes: 3
+            k8s_worker_nodes: 0
+        netsvcs-cluster:
+          cluster_name: "netsvcs-cluster"
+          provisioner_group: hosted_provisioners
+          master_nodes:
+          - netsvcs
+          worker_nodes: []
+          vars_inventory:
+            k8s_engine: k3s
+            k8s_inf_create_node: false
+            k8s_master_nodes: 1
+            k8s_worker_nodes: 0
+        nuc8-cluster:
+          cluster_name: "nuc8-cluster"
+          provisioner_group: hosted_provisioners
+          master_nodes:
+          - nuc8
+          worker_nodes: []
+          vars_inventory:
+            k8s_engine: k3s
+            k8s_inf_create_node: false
+            k8s_master_nodes: 1
+            k8s_worker_nodes: 0
+        nuc10-cluster:
+          cluster_name: "nuc10-cluster"
+          provisioner_group: hosted_provisioners
+          master_nodes:
+          - nuc10
+          worker_nodes: []
+          vars_inventory:
+            k8s_engine: k3s
+            k8s_inf_create_node: false
+            k8s_master_nodes: 1
+            k8s_worker_nodes: 0

@@ -1,0 +1,22 @@
+---
+
+- name: Increase fs.inotify limits
+  ansible.posix.sysctl:
+    name: "{{ limit_name }}"
+    value: "{{ limit_value }}"
+    state: present
+  become: true
+  become_user: root
+  loop:
+  - max_user_watches
+  - max_user_instances
+  - max_queued_events
+  vars:
+    limit_name: "{{ 'fs.inotify.' + item }}"
+    limit_value: '2099999999'
+  changed_when: false
+
+- name: Create marker file
+  file:
+    path: ~/.ansible/inotify_limits_increased
+    state: touch

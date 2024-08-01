@@ -1,0 +1,36 @@
+---
+
+- name: Add clusters to cluster_provisioners for inventory_hosts
+  hosts: cluster-facts
+  gather_facts: false
+  tasks:
+  - name: Find clusters where the inventory host is a member of all_nodes
+    set_fact:
+      clusters_on_hosts: "{{ clusters_on_hosts | default([]) | union([cluster_name]) }}"
+      vars_for_nodes: "{{ vars_for_nodes | default([]) | union([[cluster_name, all_nodes, cluster_nodes]]) }}"
+    loop: "{{ clusters.keys() }}"
+    loop_control:
+      loop_var: cluster_name
+    vars:
+      _master_nodes: "{{ clusters[cluster_name].master_nodes | default([]) }}"
+      _worker_nodes: "{{ clusters[cluster_name].worker_nodes | default([]) }}"
+      _infra_nodes: "{{ clusters[cluster_name].infra_nodes | default([]) }}"
+      cluster_nodes: "{{ (_master_nodes + _worker_nodes) | unique }}"
+      all_nodes: "{{ (cluster_nodes + _infra_nodes) | unique }}"
+    when: all_nodes | intersect(groups['inventory_hosts']) | length > 0
+  - name: Add clusters to cluster_provisioners group
+    add_host:
+      host: "{{ cluster_name }}"
+      groups: "{{ clusters[cluster_name].provisioner_group }}"
+    loop: "{{ clusters_on_hosts }}"
+    loop_control:
+      loop_var: cluster_name
+    changed_when: false
+
+- name: Deploy ArgoCD controller and configure target clusters
+  hosts: cluster_provisioners
+  gather_facts: false
+  tags: argocd
+  roles:
+  - role: argocd_install_server
+  - role: dashboard_create_admin_user

@@ -1,0 +1,25 @@
+---
+
+- name: Create kube-homelab Namespace
+  kubernetes.core.k8s:
+    api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Namespace
+    name: kube-homelab
+  register: _result
+
+- name: Create ansible-vault-cluster-secrets
+  kubernetes.core.k8s:
+    api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Secret
+    name: ansible-vault-cluster-secrets
+    namespace: kube-homelab
+    definition:
+      data:
+        namecheap_auth_username: "{{ lookup('unvault', hostvars['playbook-secrets']['namecheap_auth_username']) | trim | b64encode }}"
+        namecheap_auth_token: "{{ lookup('unvault', hostvars['playbook-secrets']['namecheap_auth_token']) | trim | b64encode }}"
+      type: Opaque
+  register: _result

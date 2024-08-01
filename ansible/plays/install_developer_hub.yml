@@ -1,7 +1,450 @@
 ---
 
+- name: Gather Cluster Info.
+  gather_facts: false
+  hosts: 'localhost'
+  tasks:
+  - name: Determine Host
+    shell: "oc cluster-info | head -n 1 | sed 's/^.*https...api//' | sed 's/.6443.*$//'"
+    register: cluster_response
+  - name: Extract Cluster
+    set_fact:
+      cluster_host: "{{ cluster_response.stdout }}"
+
+- name: Install Cert Manager Operator Chart.
+  hosts: 'localhost'
+  tasks:
+  - name: Run Cert Manager Helm Chart
+    with_items: "{{ env }}"
+    kubernetes.core.helm:
+      state: present
+      name: cert-manager
+      namespace: "openshift-operators"
+      chart_ref: ../../charts/operator
+      values_files: ["../../charts/operator/values-certmanager-operator.yaml"]
+      force: true
+
+- name: Install Vault Operator Chart.
+  hosts: 'localhost'
+  tasks:
+  - name: Wait for Cert Manager to be Ready
+    with_items: "{{ env }}"
+    kubernetes.core.k8s_info:
+      api_version:  cert-manager.io/v1
+      kind: ClusterIssuer
+    register: cm_crd
+    until: cm_crd.api_found == true
+    retries: 40
+    delay: 5
+  - name: Wait for cert-manager
+    kubernetes.core.k8s_info:
+      api_version: apps/v1
+      kind: Deployment
+      name: cert-manager
+      namespace: "openshift-operators"
+      wait: true
+      wait_condition:
+        type: Available
+      wait_sleep: 20
+      wait_timeout: 300
+  - name: Wait for cert-manager-webhook
+    kubernetes.core.k8s_info:
+      api_version: apps/v1
+      kind: Deployment
+      name: cert-manager-webhook
+      namespace: "openshift-operators"
+      wait: true
+      wait_condition:
+        type: Available
+      wait_sleep: 20
+      wait_timeout: 300
+  - name: Pause until Cert Manager is Ready
+    pause:
+      seconds: 10
+  - name: Helm Dependency Update
+    shell: "helm dep update"
+    args:
+      chdir: ../../charts/vault
+    register: sso_admin_pwd_rsp
+  - name: Run Vault Helm Chart
+    with_items: "{{ env }}"
+    kubernetes.core.helm:
+      state: present
+      name: vault
+      namespace: "{{ item.vaultnamespace }}"
+      chart_ref: ../../charts/vault
+      values:
+        dns:
+          zone: "{{ cluster_host[1:] }}"
+      create_namespace: true
+
+- name: Populate Vault with Secrets.
+  hosts: 'localhost'
+  tasks:
+  - name: Wait for Vault to Finish
+    with_items: "{{ env }}"
+    shell: "oc wait --for=condition=Ready pod/vault-0 -n vault --timeout=300s"
+  - name: Pause for secret store to become available
+    pause:
+      seconds: 20
+  - name: Retrieve Vault Token
+    with_items: "{{ env }}"
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Secret
+      name: vault-init
+      namespace: vault
+    register: vault_init
+  - name: Extract Vault Token
+    set_fact:
+      vault_token: "{{ vault_init.results[0].resources[0].data.root_token | b64decode }}"
+  - name: Populate Vault with Dev Spaces Secrets
+    with_items: "{{ env }}"
+    community.hashi_vault.vault_write:
+      url: "https://vault-vault.apps{{ cluster_host }}"
+      path: kv/{{ item.janusinstancename }}/dev-spaces
+      validate_certs: false
+      data:
+        id: "{{ lookup('ansible.builtin.env', 'GITHUB_DEV_SPACES_CLIENT_ID') }}"
+        secret: "{{ lookup('ansible.builtin.env', 'GITHUB_DEV_SPACES_CLIENT_SECRET') }}"
+      token: "{{ vault_token }}"
+    register: vault_status
+  - name: Populate Vault with Github Credentials
+    with_items: "{{ env }}"
+    community.hashi_vault.vault_write:
+      url: "https://vault-vault.apps{{ cluster_host }}"
+      path: kv/{{ item.janusinstancename }}/github-plugin
+      validate_certs: false
+      data:
+        app_id: "{{ lookup('ansible.builtin.env', 'GITHUB_APP_ID') }}"
+        org: "{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}"
+        private_key: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'GITHUB_KEY_FILE')) }}"
+      token: "{{ vault_token }}"
+
+- name: Install and Configure GitOps.
+  hosts: 'localhost'
+  tasks:
+  - name: Install GitOps Helm Chart
+    with_items: "{{ env }}"
+    kubernetes.core.helm:
+      state: present
+      name: argocd
+      namespace: "{{ item.gitopsnamespace }}"
+      chart_ref: ../../charts/gitops-operator
+      values:
+        namespaces:
+          - janus-argocd
+          - infra-argocd
+        projects:
+          - name: janus
+            namespace: janus-argocd
+            role: automation
+      create_namespace: true
+  - name: Wait for ArgoCD to be Ready
+    with_items: "{{ env }}"
+    kubernetes.core.k8s_info:
+      api_version: argoproj.io/v1alpha1
+      kind: ApplicationSet
+    register: cm_crd
+    until: cm_crd.api_found == true
+    retries: 40
+    delay: 5
+  - name: Pause for GitOps to be running
+    pause:
+      seconds: 20
+  - name: Apply ApplicationSet for Infra Deployment
+    with_items: "{{ env }}"
+    kubernetes.core.helm:
+      state: present
+      name: infra-argocd
+      namespace: "{{ item.gitopsinfranamespace }}"
+      chart_ref: ../../charts/applicationset
+      values:
+        janusInstanceName: "{{ item.janusinstancename }}"
+        git:
+          applicationId: "{{ lookup('ansible.builtin.env', 'GITHUB_APP_ID') }}"
+          infraOrgName: "{{ item.githubinfraorganization }}"
+          infraRevision: "{{ item.githubinfrarevision }}"
+  - name: Pause for operators to complete install
+    pause:
+      seconds: 90
+
+- name: Install RHSSO Backstage Chart.
+  hosts: 'localhost'
+  tasks:
+  - name: Wait for KeyCloak CRD
+    with_items: "{{ env }}"
+    kubernetes.core.k8s_info:
+      api_version: keycloak.org/v1alpha1
+      kind: Keycloak
+    register: kc_crd
+    until: kc_crd.api_found == true
+    retries: 60
+    delay: 5
+  - name: Pause until Keycloak is Ready
+    pause:
+      seconds: 10
+  - name: Run RHSSO Backstage Helm Chart
+    with_items: "{{ env }}"
+    kubernetes.core.helm:
+      state: present
+      name: rhsso-backstage
+      namespace: "{{ item.namespace }}"
+      chart_ref: ../../charts/rhsso-backstage
+      values:
+        keycloak:
+          realm:
+            identityProvider:
+              clientId: "{{ lookup('ansible.builtin.env', 'GITHUB_KEYCLOAK_CLIENT_ID') }}"
+              clientSecret: "{{ lookup('ansible.builtin.env', 'GITHUB_KEYCLOAK_CLIENT_SECRET') }}"
+              enabled: "{{ false if lookup('ansible.builtin.env', 'GITHUB_KEYCLOAK_CLIENT_SECRET') == '' else true }}"
+        backstage:
+          host: "janus-demo.apps{{ cluster_host }}"
+      create_namespace: true
+  - name: Wait for Keycloak to be Ready
+    with_items: "{{ env }}"
+    uri:
+      url: https://keycloak-{{ item.namespace }}.apps{{ cluster_host }}/auth
+      status_code: 200
+    register: result
+    until: result.status == 200
+    retries: 300
+    delay: 2
+  - name: Pause until Keycloak is initialized
+    pause:
+      seconds: 10
+  - name: Fetching RHSSO Admin Credentials
+    with_items: "{{ env }}"
+    shell: "oc -n {{ item.namespace }} get secret credential-rhsso-backstage --template='{{ '{{' }}.data.ADMIN_PASSWORD{{ '}}' }}' | base64 -d"
+    register: sso_admin_pwd_rsp
+  - name: Extract Password
+    set_fact:
+      sso_admin_pwd: "{{ sso_admin_pwd_rsp.results[0].stdout }}"
+      keycloak_namespce: "{{ sso_admin_pwd_rsp.results[0].item.namespace }}"
+  - name: Get RHSSO Auth Token
+    uri:
+      url: https://keycloak-{{ keycloak_namespce }}.apps{{ cluster_host }}/auth/realms/master/protocol/openid-connect/token
+      method: POST
+      body_format: form-urlencoded
+      body:
+        grant_type: "password"
+        client_id: "admin-cli"
+        username: "admin"
+        password: "{{ sso_admin_pwd }}"
+      return_content: true
+    register: token_rsp
+  - name: Extract Token
+    set_fact:
+      access_token: "{{ token_rsp.json.access_token }}"
+  - name: Get Backstage Client UUID
+    uri:
+      url: https://keycloak-{{ keycloak_namespce }}.apps{{ cluster_host }}/auth/admin/realms/backstage/clients?clientId=backstage
+      status_code: 200
+      method: GET
+      headers:
+        Authorization: "bearer {{ access_token }}"
+      return_content: true
+    register: client_uuid_rsp
+  - name: Extract UUID
+    set_fact:
+      client_uuid: "{{ client_uuid_rsp.json[0].id }}"
+  - name: Get Backstage Client Secret
+    uri:
+      url: https://keycloak-{{ keycloak_namespce }}.apps{{ cluster_host }}/auth/admin/realms/backstage/clients/{{ client_uuid }}/client-secret
+      method: GET
+      headers:
+        Authorization: "bearer {{ access_token }}"
+      return_content: true
+    register: client_secret_rsp
+  - name: Extract Client Secret
+    set_fact:
+      client_secret: "{{ client_secret_rsp.json.value }}"
+
+- name: Install Backstage Chart.
+  hosts: 'localhost'
+  tasks:
+  - name: Fetching ArgoCD Admin Credentials
+    with_items: "{{ env }}"
+    shell: "oc -n {{ item.gitopsnamespace }} get secret argocd-cluster --template='{{ '{{' }}index .data \"admin.password\"{{ '}}' }}' | base64 -d"
+    register: argocd_admin_pwd_rsp
+  - name: Extract Password
+    set_fact:
+      argocd_admin_pwd: "{{ argocd_admin_pwd_rsp.results[0].stdout }}"
+  - name: Generate ArgoCD Admin Token
+    with_items: "{{ env }}"
+    uri:
+      url: "https://argocd-server-{{ item.gitopsnamespace }}.apps{{ cluster_host }}/api/v1/session"
+      method: POST
+      body: '{"username":"admin","password":"{{ argocd_admin_pwd }}"}'
+      body_format: json
+      status_code: 200
+    register: argocd_admin_token_rsp
+    until: argocd_admin_token_rsp.status == 200
+    retries: 35
+    delay: 5
+  - name: Extract Token
+    set_fact:
+      argocd_admin_token: "{{ argocd_admin_token_rsp.results[0].json.token }}"
+  - name: Generate ArgoCD Automation Token
+    with_items: "{{ env }}"
+    uri:
+      url: "https://argocd-server-{{ item.gitopsnamespace }}.apps{{ cluster_host }}/api/v1/projects/janus/roles/automation/token"
+      method: POST
+      headers:
+        Cookie: "argocd.token={{ argocd_admin_token }}"
+      status_code: 200
+    register: argocd_automation_token_rsp
+    until: argocd_automation_token_rsp.status == 200
+    retries: 35
+    delay: 5
+  - name: Extract Token
+    set_fact:
+      argocd_automation_token: "{{ argocd_automation_token_rsp.results[0].json.token }}"
+  - name: Fetching Default Service Account Token
+    with_items: "{{ env }}"
+    shell: "oc create token default -n default --duration 8760h"
+    register: svc_account_token_rsp
+  - name: Extract Token
+    set_fact:
+      svc_account_token: "{{ svc_account_token_rsp.results[0].stdout }}"
+  - name: Fetching GitHub App Private Key
+    with_items: "{{ env }}"
+    shell: "cat $GITHUB_KEY_FILE"
+    register: github_private_key_rsp
+  - name: Extract Private Key
+    set_fact:
+      github_private_key: "{{ github_private_key_rsp.results[0].stdout }}"
+  - name: Run Backstage Helm Chart
+    with_items: "{{ env }}"
+    kubernetes.core.helm:
+      state: present
+      name: "{{ item.janusinstancename }}"
+      namespace: "{{ item.namespace }}"
+      chart_ref: ../../charts/janus-backstage
+      values:
+        image:
+          tag: "0.2.0"
+        rhsso:
+          baseUrl: "https://keycloak-{{ item.namespace }}.apps{{ cluster_host }}/auth"
+          clientId: "backstage"
+          clientSecret: "{{ client_secret }}"
+          backstagePluginEnabled: true
+        backstage:
+          baseUrl: "https://janus-demo.apps{{ cluster_host }}"
+          catalog:
+            providers:
+              github:
+                providerId:
+                  organization: "{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}"
+                  catalogPath: "/catalog-info.yaml"
+                  filters:
+                    branch: "main"
+                  schedule:
+                    frequency: { minutes: 1 }
+                    timeout: { minutes: 3 }
+            locations:
+              - type: url
+                target: https://github.com/{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}/backstage-workshop/blob/master/scaffolder-templates/poi-map/template.yaml
+                rules:
+                  - allow: [Template]
+              - type: url
+                target: https://github.com/{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}/backstage-workshop/blob/master/scaffolder-templates/poi-gateway/template.yaml
+                rules:
+                  - allow: [Template]
+              - type: url
+                target: https://github.com/{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}/backstage-workshop/blob/master/scaffolder-templates/poi-backend/template.yaml
+                rules:
+                  - allow: [Template]
+        oauth:
+          enabled: true
+        postgres:
+          database_password: "postgres"
+        github:
+          enabled: "{{ false if lookup('ansible.builtin.env', 'GITHUB_APP_ID') == '' else true }}"
+          appId: "{{ lookup('ansible.builtin.env', 'GITHUB_APP_ID') }}"
+          clientId: "{{ lookup('ansible.builtin.env', 'GITHUB_APP_CLIENT_ID') }}"
+          clientSecret: "{{ lookup('ansible.builtin.env', 'GITHUB_APP_CLIENT_SECRET') }}"
+          privateKey: "{{ github_private_key }}"
+          organization: "{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}"
+        argocd:
+          enabled: true
+          waitCycles: 25
+          url: "https://argocd-server-{{ item.gitopsnamespace }}.apps{{ cluster_host }}"
+          token: "{{ argocd_automation_token }}"
+        auth:
+          github:
+            enabled: true
+            clientId: "{{ lookup('ansible.builtin.env', 'GITHUB_BACKSTAGE_CLIENT_ID') }}"
+            clientSecret: "{{ lookup('ansible.builtin.env', 'GITHUB_BACKSTAGE_CLIENT_SECRET') }}"
+        kubernetes:
+          enabled: true
+          url: "https://api{{ cluster_host }}:6443"
+          token: "{{ svc_account_token }}"
+          tektonEnabled: true
+        githubOrgProvider:
+          enabled: true
+        ocm:
+          enabled: false
+        sonarqube:
+          enabled: false
+        techdocs:
+          enabled: true
+      create_namespace: true
+
+- name: Install Console links
+  hosts: 'localhost'
+  tasks:
+  - name: Install Console link to Workshop Instructions
+    with_items: "{{ env }}"
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: console.openshift.io/v1
+        kind: ConsoleLink
+        metadata:
+          name: application-menu-content
+        spec:
+          href: 'https://redhat-scholars.github.io/backstage-workshop'
+          location: ApplicationMenu
+          text: Workshop Instructions
+          applicationMenu:
+            section: Workshop Resources
+            imageURL: https://yt3.ggpht.com/ytc/AKedOLRI9AQ_w5yyklg6BhPexpyq9ZPbAXZnXTnzEcyx5Q=s88-c-k-c0x00ffffff-no-rj
+  - name: Install Console link to Backstage
+    with_items: "{{ env }}"
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: console.openshift.io/v1
+        kind: ConsoleLink
+        metadata:
+          name: application-menu-backstage
+        spec:
+          href: "https://janus-demo.apps{{ cluster_host }}"
+          location: ApplicationMenu
+          text: Red Hat Developer Hub
+          applicationMenu:
+            section: Workshop Resources
+            imageURL: https://console-openshift-console.apps{{ cluster_host }}/static/assets/redhat.svg
+  - name: Install Console link to GitHub Org
+    with_items: "{{ env }}"
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: console.openshift.io/v1
+        kind: ConsoleLink
+        metadata:
+          name: application-menu-github
+        spec:
+          href: "https://github.com/{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}"
+          location: ApplicationMenu
+          text: "{{ lookup('ansible.builtin.env', 'GITHUB_ORGANIZATION') }}"
+          applicationMenu:
+            section: Workshop Resources
+            imageURL: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
+
 - name: Install Developer Hub
-  hosts: developer_hub
+  hosts: developer-hub
   gather_facts: false
   roles:
   - role: install_developer_hub

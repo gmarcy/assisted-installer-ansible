@@ -1,10 +1,16 @@
 ---
 
 - name: Install Cluster Operators
-  hosts: cluster_operators
+  hosts: cluster-operators
   gather_facts: false
   tags: cluster_operators
   tasks:
+  - name: Print cluster operators configuration
+    debug:
+      msg:
+      - "{{ 'Deploying Cluster operators:' }}"
+      - "{{ operators_to_deploy }}"
+    when: operators_to_deploy is defined
   - name: Create namespaces for the cluster operators
     include_role:
       name: create_target_namespace

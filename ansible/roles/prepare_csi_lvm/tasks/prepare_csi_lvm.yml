@@ -1,0 +1,29 @@
+---
+
+- when: csi_lvm_hard_reset | default(false)
+  block:
+
+    - name: Remove any existing csi-lvm logical volume
+      command: /usr/sbin/lvremove csi-lvm -f
+      become: true
+      become_user: root
+
+    - name: Remove any existing filesystems on csi_lvm_device
+      command: /usr/sbin/wipefs -a {{ csi_lvm_device }}
+      become: true
+      become_user: root
+
+- name: Create the physical volume
+  command: /usr/sbin/pvcreate -ff -y {{ csi_lvm_device }}
+  become: true
+  become_user: root
+
+- name: Create the volume group
+  command: /usr/sbin/vgcreate csi-lvm {{ csi_lvm_device }}
+  become: true
+  become_user: root
+
+- name: Create marker file
+  file:
+    path: ~/.ansible/csi-lvm-created
+    state: touch

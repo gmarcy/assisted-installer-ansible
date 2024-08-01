@@ -1,0 +1,14 @@
+---
+
+ungrouped:
+  hosts:
+    cmdline-facts:
+    localhost-facts:
+    playbook-facts:
+    playbook-secrets:
+      inv_secrets_dir: "{{ lookup('env', 'HOME') + '/.ssh/.ansible/.secrets' }}"
+    cluster-facts:
+      cluster_provisioner: 'techzone-provisioner'
+      inv_cluster_description: 'TechZone OpenShift Cluster'
+      inv_kubernetes_distro: openshift
+      inv_openshift_distro: ocp

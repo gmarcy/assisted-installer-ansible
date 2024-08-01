@@ -1,7 +1,7 @@
 ---
 
 - name: Install ArgoCD
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: argocd
   roles:

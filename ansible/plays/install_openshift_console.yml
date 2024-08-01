@@ -1,7 +1,7 @@
 ---
 
 - name: Install openshift-console
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: openshift_console
   roles:

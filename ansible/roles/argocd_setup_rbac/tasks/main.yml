@@ -1,0 +1,241 @@
+---
+
+- name: Set facts for this role
+  set_fact:
+    target_namespace: 'argocd'
+
+- name: Set included_target_clusters fact
+  set_fact:
+    included_target_clusters: "{{ groups['cluster_provisioners'] | intersect(target_clusters.keys()) }}"
+
+- when: included_target_clusters | length > 0
+  block:
+
+    - name: Fetch the argocd-manager ServiceAccounts
+      kubernetes.core.k8s_info:
+        api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+        api_version: v1
+        kind: ServiceAccount
+        name: argocd-manager
+        namespace: kube-system
+      register: _result
+      loop: "{{ included_target_clusters }}"
+      loop_control:
+        loop_var: target_cluster
+
+    - name: Set service account facts needed later
+      set_fact:
+        service_account_uids: "{{ service_account_uids | default([]) + service_account_uid }}"
+        service_account_secrets: "{{ service_account_secrets | default([]) + service_account_secret }}"
+      loop: "{{ _result.results | map(attribute='resources') }}"
+      vars:
+        service_account_uid: "{{ ['MISSING'] if (item | length == 0) else item | map(attribute='metadata.uid', default='MISSING') }}"
+        service_account_secret: "{{ ['MISSING'] if (item | length == 0) else item | map(attribute='secrets', default=[{'name': 'MISSING'}]) | flatten | map(attribute='name') }}"
+
+    - when: "'MISSING' is in service_account_uids"
+      block:
+
+        - name: Create the argocd-manager ServiceAccounts
+          kubernetes.core.k8s:
+            api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+            kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+            api_version: v1
+            kind: ServiceAccount
+            name: argocd-manager
+            namespace: kube-system
+            definition:
+              secrets: []
+          register: _result
+          loop: "{{ included_target_clusters }}"
+          loop_control:
+            loop_var: target_cluster
+
+        - name: Set service account facts needed later
+          set_fact:
+            service_account_uids: "{{ _result.results | map(attribute='result') | map(attribute='metadata.uid') }}"
+
+    - name: Fetch the argocd-manager-role ClusterRoles
+      kubernetes.core.k8s_info:
+        api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: argocd-manager-role
+      register: _result
+      loop: "{{ included_target_clusters }}"
+      loop_control:
+        loop_var: target_cluster
+
+    - name: Set cluster role facts needed later
+      set_fact:
+        cr_uids: "{{ cr_uids | default([]) + cr_uid }}"
+      loop: "{{ _result.results | map(attribute='resources') }}"
+      vars:
+        cr_uid: "{{ ['MISSING'] if (item | length == 0) else item | map(attribute='metadata.uid', default='MISSING') }}"
+
+    - when: "'MISSING' is in cr_uids"
+      block:
+
+        - name: Create the argocd-manager-role ClusterRoles
+          kubernetes.core.k8s:
+            api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+            kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+            api_version: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            name: argocd-manager-role
+            definition:
+              rules:
+              - apiGroups:
+                - '*'
+                resources:
+                - '*'
+                verbs:
+                - '*'
+              - nonResourceURLs:
+                - '*'
+                verbs:
+                - '*'
+          register: _result
+          loop: "{{ included_target_clusters }}"
+          loop_control:
+            loop_var: target_cluster
+
+    - name: Fetch the argocd-manager-role-binding ClusterRoleBindings
+      kubernetes.core.k8s_info:
+        api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: argocd-manager-role-binding
+      register: _result
+      loop: "{{ included_target_clusters }}"
+      loop_control:
+        loop_var: target_cluster
+
+    - name: Set cluster role binding facts needed later
+      set_fact:
+        crb_uids: "{{ crb_uids | default([]) + crb_uid }}"
+      loop: "{{ _result.results | map(attribute='resources') }}"
+      vars:
+        crb_uid: "{{ ['MISSING'] if (item | length == 0) else item | map(attribute='metadata.uid', default='MISSING') }}"
+
+    - when: "'MISSING' is in crb_uids"
+      block:
+
+        - name: Create the argocd-manager-role-binding ClusterRoleBindings
+          kubernetes.core.k8s:
+            api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+            kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+            api_version: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            name: argocd-manager-role-binding
+            definition:
+              roleRef:
+                apiGroup: rbac.authorization.k8s.io
+                kind: ClusterRole
+                name: argocd-manager-role
+              subjects:
+              - kind: ServiceAccount
+                name: argocd-manager
+                namespace: kube-system
+          register: _result
+          loop: "{{ included_target_clusters }}"
+          loop_control:
+            loop_var: target_cluster
+
+    - name: Fetch the kube-system namespace Secrets
+      kubernetes.core.k8s_info:
+        api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+        api_version: v1
+        kind: Secret
+        namespace: kube-system
+      register: _result
+      loop: "{{ included_target_clusters }}"
+      loop_control:
+        loop_var: target_cluster
+
+    - name: Clear the bearer_token_secrets fact
+      set_fact:
+        bearer_token_secrets: []
+
+    - name: Set bearer_token_secrets fact
+      set_fact:
+        bearer_token_secrets: "{{ bearer_token_secrets + (secret_names if (secret_names | length > 0) else ['MISSING']) }}"
+      loop: "{{ _result.results | map(attribute='resources') }}"
+      vars:
+        secret_names: "{{ item | selectattr('type', '==', 'kubernetes.io/service-account-token') | map(attribute='metadata.name') }}"
+
+    - name: Set bearer_tokens_missing fact
+      set_fact:
+        bearer_tokens_missing: "{{ 'MISSING' is in bearer_token_secrets }}"
+
+    - when: bearer_tokens_missing
+      block:
+
+        - name: Create the argocd-manager-token-xxxxx Secret
+          kubernetes.core.k8s:
+            api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+            kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+            api_version: v1
+            kind: Secret
+            namespace: kube-system
+            definition:
+              metadata:
+                annotations:
+                  kubernetes.io/service-account.name: argocd-manager
+                  kubernetes.io/service-account.uid: "{{ service_account_uids[ansible_loop.index0] }}"
+                generateName: argocd-manager-token-
+              type: kubernetes.io/service-account-token
+          register: _result
+          loop: "{{ included_target_clusters | zip(bearer_token_secrets) }}"
+          loop_control:
+            extended: true
+          vars:
+            target_cluster: "{{ item[0] }}"
+            bearer_token_secret: "{{ item[1] }}"
+          when: bearer_token_secret == 'MISSING'
+
+        - name: Refetch the kube-system namespace Secrets
+          kubernetes.core.k8s_info:
+            api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+            kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+            api_version: v1
+            kind: Secret
+            namespace: kube-system
+          register: _result
+          loop: "{{ included_target_clusters }}"
+          loop_control:
+            loop_var: target_cluster
+
+        - name: Clear the bearer_token_secrets fact
+          set_fact:
+            bearer_token_secrets: []
+
+        - name: Set bearer_token_secrets fact
+          set_fact:
+            bearer_token_secrets: "{{ bearer_token_secrets + (secret_names if (secret_names | length > 0) else ['MISSING']) }}"
+          loop: "{{ _result.results | map(attribute='resources') }}"
+          vars:
+            secret_names: "{{ item | selectattr('type', '==', 'kubernetes.io/service-account-token') | map(attribute='metadata.name') }}"
+
+    - name: Add the bearer token secret name back into the ServiceAccount
+      kubernetes.core.k8s:
+        api_key: "{{ hostvars[target_cluster].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[target_cluster].kubeconfig_path }}"
+        api_version: v1
+        kind: ServiceAccount
+        name: argocd-manager
+        namespace: kube-system
+        definition:
+          secrets:
+            - name: "{{ bearer_token_secret_name }}"
+      register: _result
+      loop: "{{ included_target_clusters | zip(bearer_token_secrets) }}"
+      loop_control:
+        extended: true
+      vars:
+        target_cluster: "{{ item[0] }}"
+        bearer_token_secret_name: "{{ item[1] }}"
+      when: service_account_secrets[ansible_loop.index0] == 'MISSING'

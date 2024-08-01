@@ -1,9 +1,9 @@
 ---
 
 - name: Install W3ID OAuth Identity Provider
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
-  tags: cluster_facts
+  tags: w3id_oauth
   roles:
   - role: install_oauth_idp_openid
     api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
@@ -59,3 +59,6 @@
       definition:
         users: "{{ w3id_cluster_admins }}"
     register: _result
+  - name: Clear temporary facts
+    set_fact:
+      _result: {}

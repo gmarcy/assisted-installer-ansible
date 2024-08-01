@@ -2,7 +2,6 @@
 
 all:
   vars:
-    ansible_python_interpreter: /usr/bin/python3
   children:
     all_nodes:
       hosts:
@@ -38,32 +37,20 @@ all:
       hosts:
         gmarcy-k8s-infra-master:
     worker_nodes:
-    cluster_facts:
-      hosts:
-        cluster-facts:
-          cluster_provisioner: 'hosted_provisioner'
-          inv_cluster_description: 'Kubernetes K3S Cluster'
-          inv_cluster_domain: fyre.ibm.com
-          inv_kubernetes_distro: k3s
-          inv_kubernetes_version: '1.24'
-    hosted_provisioner:
-      hosts:
-        hosted-provisioner:
-          provisioning_role: 'cluster_request_hosted'
-          deprovisioning_role: 'cluster_cleanup_hosted'
-          cluster_facts_role: 'cluster_gather_facts_hosted'
-          deploy_infra_services: true
-          vars_inventory:
-            k8s_version: 1.24.9
-            k8s_engine: k3s
-            k8s_master_nodes: 1
-            k8s_worker_nodes: 0
-    cluster_storage:
-      hosts:
-        cluster-storage:
-          storage_provisioner: 'rook-cephfs'
-          provisioning_role: 'storage_deploy_cephfs'
-          deprovisioning_role: 'storage_remove_cephfs'
-          inv_rook_ceph_release: v1.10.4
-          inv_default_storage_class: "{{ cephfs_storage_class }}"
-          inv_default_block_class: "{{ cephfs_block_class }}"
+
+ungrouped:
+  hosts:
+    cluster-facts:
+      cluster_provisioner: 'hosted-provisioner'
+      inv_cluster_description: 'Kubernetes K3S Cluster'
+      inv_cluster_domain: fyre.ibm.com
+      inv_kubernetes_distro: k3s
+    hosted-provisioner:
+      provisioning_role: 'cluster_request_hosted'
+      deprovisioning_role: 'cluster_cleanup_hosted'
+      cluster_facts_role: 'cluster_gather_facts_hosted'
+      deploy_infra_services: true
+      vars_inventory:
+        k8s_engine: k3s
+        k8s_master_nodes: 1
+        k8s_worker_nodes: 0

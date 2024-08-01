@@ -1,7 +1,7 @@
 ---
 
-- import_playbook: ../plays/gather_playbook_facts.yml
-- import_playbook: ../plays/gather_cluster_facts.yml
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.gather_cluster_facts
 - import_playbook: ../plays/install_ingress_nginx.yml
 - import_playbook: ../plays/install_cert_manager.yml
 - import_playbook: ../plays/install_cluster_registry.yml

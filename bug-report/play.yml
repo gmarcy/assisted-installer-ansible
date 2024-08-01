@@ -1,9 +1,0 @@
----
-
-- hosts: all
-  gather_facts: false
-  tasks:
-  - debug: var=actual_value
-  - debug: var=hostvars['localhost'].actual_value
-  - debug: var=indirect_value
-  - debug: var=hostvars['localhost'].indirect_value

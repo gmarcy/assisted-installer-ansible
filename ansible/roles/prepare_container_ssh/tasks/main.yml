@@ -1,13 +1,25 @@
 ---
 
-- name: Copy setup ssh key secret into ~/.ssh
-  ansible.builtin.copy:
-    content: "{{ lookup('unvault', hostvars['playbook-secrets'].secrets['setup-ssh-key']) }}"
-    dest: "{{ hostvars['localhost-facts'].setup_keypair_path }}"
-    mode: '0600'
+- name: Create ssh keypairs for inventory_hosts when running in a container
+  block:
 
-- name: Add ansible_ssh_extra_args to setup host
-  ansible.builtin.add_host:
-    name: "{{ setup_host_name }}"
-    group: "{{ setup_host_group }}"
-    ansible_ssh_extra_args: "-i {{ hostvars['localhost-facts'].setup_keypair_path }}"
+    - name: Create ~/.ssh folder if needed
+      ansible.builtin.file:
+        path: "{{ local_home + '/.ssh' }}"
+        state: directory
+        mode: '0700'
+      changed_when: false
+
+    - name: Create keypair for each inventory host
+      ansible.builtin.copy:
+        content: "{{ lookup('unvault', hostvars['playbook-secrets'][hostvars[inventory_host].ssh_keypair.secret]) }}"
+        dest: "{{ hostvars[inventory_host].ssh_keypair_path }}"
+        mode: '0600'
+      loop: "{{ inventory_hosts }}"
+      loop_control:
+        loop_var: inventory_host
+      changed_when: false
+
+  vars:
+    local_home: "{{ hostvars['localhost-facts'].local_home }}"
+    ssh_keytype: "{{ hostvars['localhost-facts'].ssh_keytype }}"

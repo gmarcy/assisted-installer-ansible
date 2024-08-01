@@ -1,0 +1,20 @@
+---
+
+ansible_host: localhost
+ansible_connection: local
+ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+cluster_description: "{{ inv_cluster_description | default('Kubernetes Cluster') }}"
+cluster_domain: "{{ inv_cluster_domain }}"
+cluster_fqdn: "{{ cluster_name + '.' + cluster_domain }}"
+network_cidr: "{{ inv_network_cidr | default('') }}"
+http_proxy: "{{ inv_cluster_proxy | default('') }}"
+cluster_host_names: "{{ inv_cluster_hosts | default('') }}"
+single_node: "{{ inv_single_node | default(false) }}"
+api_vip: "{{ inv_cluster_api_vip | default('') }}"
+ingress_vip: "{{ inv_cluster_ingress_vip | default('') }}"
+
+kubernetes_distro: "{{ inv_kubernetes_distro }}"
+
+openshift_distro: "{{ inv_openshift_distro | default('') }}"
+openshift_version: "{{ inv_openshift_version | default('') }}"

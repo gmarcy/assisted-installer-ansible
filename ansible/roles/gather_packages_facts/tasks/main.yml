@@ -1,0 +1,21 @@
+---
+
+- when: "'gather_packages_facts' not in (roles_completed | default([]))"
+  block:
+
+    - name: Gather the package facts
+      ansible.builtin.package_facts:
+        manager: "{{ hostvars[inventory_hostname].package_manager }}"
+      register: _result
+
+    - name: Set podman_is_installed
+      ansible.builtin.set_fact:
+        podman_is_installed: "{{ true if ('podman' in _result.ansible_facts.packages) else false }}"
+
+    - name: Clear results
+      ansible.builtin.set_fact:
+        _result:
+
+    - name: Set fact that we have completed this role
+      set_fact:
+        roles_completed: "{{ roles_completed | default([]) | union(['gather_packages_facts']) }}"

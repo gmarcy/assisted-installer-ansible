@@ -1,0 +1,47 @@
+! Configuration File for keepalived
+
+global_defs {
+   notification_email {
+     {{ keepalived.config.notification_email_to }}
+   }
+   notification_email_from {{ keepalived.config.notification_email_from }}
+   smtp_server {{ keepalived.config.smtp_server }}
+   smtp_connect_timeout 30
+   router_id {{ keepalived.config.router_id }}
+   vrrp_skip_check_adv_addr
+   max_auto_priority
+}
+{% for vrrp_instance in keepalived.config.vrrp_instances %}
+
+vrrp_instance VI_{{ loop.index }} {
+    state {{ keepalived.config.vrrp_instance_state }}
+    interface {{ vrrp_instance.interface }}
+    virtual_router_id {{ vrrp_instance.virtual_router_id }}
+    priority {{ keepalived.config.vrrp_instance_priority }}
+
+    unicast_src_ip {{ vrrp_instance.unicast_src_ip }}
+    unicast_peer {
+        {{ vrrp_instance.unicast_peer_ip }}
+    }
+
+    virtual_ipaddress {
+        {{ vrrp_instance.vip }}
+    }
+}
+{% endfor %}
+{% for virtual_server in keepalived.config.virtual_servers %}
+
+virtual_server {{ virtual_server.vip }} {{ virtual_server.port }} {
+    delay_loop 6
+    lb_algo rr
+    lb_kind DR
+    persistence_timeout 50
+    protocol {{ virtual_server.protocol }}
+
+{% for real_server in virtual_server.real_servers %}
+    real_server {{ real_server.ip }} {{ virtual_server.port }} {
+        {{ keepalived.real_server_check | indent(8) }}
+    }
+{% endfor -%}
+}
+{% endfor %}

@@ -1,0 +1,11 @@
+---
+
+ansible_host: edge2b.lab.gmarcy.com
+ansible_ssh_host: edge2b.lab.gmarcy.com
+gathering_roles:
+- gmarcy.ansible.setup_ansible_host
+- gmarcy.ansible.gather_host_facts
+prepare_host_roles:
+- gmarcy.ansible.add_remote_ssh_access:
+    authorized_key_name: work_laptop
+csi_lvm_device: /dev/sda1

@@ -2,11 +2,16 @@
 
 ansible_host: netsvcs.lab.gmarcy.com
 ansible_ssh_host: netsvcs.lab.gmarcy.com
-#host_address: 192.168.222.253
+gathering_roles:
+- gmarcy.ansible.setup_ansible_host
+- gmarcy.ansible.gather_host_facts
+prepare_host_roles:
+- gmarcy.ansible.add_remote_ssh_access:
+    authorized_key_name: work_laptop
 install_disk: nvme0n1
 ipmi_info:
   interface: none
+efibootmgr:
+  ipxe_bootdev: '2'
 ipxe_mac_address: 34-1a-4c-03-45-23
-prepare_remote_host_roles:
-- prepare_csi_lvm
 csi_lvm_device: /dev/nvme0n1p6

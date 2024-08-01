@@ -1,7 +1,24 @@
 ---
 
-host_address: 192.168.222.214
+ansible_host: nuc10.lab.gmarcy.com
+ansible_ssh_host: nuc10.lab.gmarcy.com
+gathering_roles:
+- gmarcy.ansible.setup_ansible_host
+- gmarcy.ansible.gather_host_facts
+prepare_host_roles:
+#- gmarcy.ansible.add_remote_user:
+#    user_name: gmarcy
+#    user_groups:
+#    - sudo
+#- gmarcy.ansible.add_remote_user:
+#    user_name: runner
+- gmarcy.ansible.add_remote_ssh_access:
+    authorized_key_name: work_laptop
+#    remote_user: gmarcy
 install_disk: nvme0n1
 ipmi_info:
   interface: none
+efibootmgr:
+  ipxe_bootdev: '2'
 ipxe_mac_address: 1c-69-7a-6d-29-43
+csi_lvm_device: /dev/nvme0n1p6

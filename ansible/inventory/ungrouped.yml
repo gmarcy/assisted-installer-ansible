@@ -1,0 +1,9 @@
+---
+
+ungrouped:
+  hosts:
+    cmdline-facts:
+    localhost-facts:
+    playbook-facts:
+    playbook-secrets:
+      inv_secrets_dir: "{{ lookup('env', 'HOME') + '/.ssh/.ansible/.secrets' }}"

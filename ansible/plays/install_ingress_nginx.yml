@@ -1,7 +1,7 @@
 ---
 
 - name: Install Ingress-Nginx
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: ingress_nginx
   roles:

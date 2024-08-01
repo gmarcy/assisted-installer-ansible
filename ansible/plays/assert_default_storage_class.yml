@@ -1,7 +1,7 @@
 ---
 
 - name: Confirm that we have a default storage class
-  hosts: cluster_storage
+  hosts: cluster-storage
   gather_facts: false
   tags: cluster_storage
   roles:

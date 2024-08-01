@@ -1,8 +1,6 @@
 ---
 
-- when: target_operator_name not in ['ibm-common-service-operator','ibm-websphere-automation']
-  # this is not working when two catalog sources provide the same operator
-  name: Fetch target_operator_name PackageManifest
+- name: Fetch target_operator_name PackageManifest
   kubernetes.core.k8s_info:
     api_key: "{{ api_key | default(omit) }}"
     kubeconfig: "{{ kubeconfig_path }}"
@@ -10,26 +8,13 @@
     kind: PackageManifest
     name: "{{ target_operator_name }}"
     namespace: "{{ target_catalog_source_namespace | default('openshift-marketplace') }}"
-  register: _result_fast
-  until: _result_fast['resources'] | length > 0
-
-- when: target_operator_name in ['ibm-common-service-operator','ibm-websphere-automation']
-  name: Fetch target_operator_name PackageManifest
-  kubernetes.core.k8s_info:
-    api_key: "{{ api_key | default(omit) }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-    api_version: packages.operators.coreos.com/v1
-    kind: PackageManifest
-    label_selectors:
-    - catalog={{ target_catalog_source_name }}
-    namespace: "{{ target_catalog_source_namespace | default('openshift-marketplace') }}"
-  register: _result_slow
-  until: _result_slow['resources'] | length > 0
+  register: _result
+  until: _result['resources'] | length > 0
 
 - name: Set fact for status of the matching package manifest
   set_fact:
     manifest_status: "{{ item['status'] }}"
-  loop: "{{ _result_fast['resources'] | default(_result_slow['resources']) }}"
+  loop: "{{ _result['resources'] }}"
   when: item['metadata']['name'] == target_operator_name and item['status']['catalogSource'] == target_catalog_source_name
 
 - name: Set subscription channel and catalog source facts

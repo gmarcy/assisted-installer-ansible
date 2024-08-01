@@ -1,7 +1,7 @@
 ---
 
 - name: Allow pods to run on master nodes
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: pods_on_master
   tasks:

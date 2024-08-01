@@ -2,9 +2,15 @@
 
 - name: Set facts used in this role
   set_fact:
-    cluster_dir: "{{ hostvars['cluster-facts']['cluster_dir'] }}"
+    local_home: "{{ _local_home }}"
+    cluster_name: "{{ _cluster_name }}"
+    clusters_basedir: "{{ hostvars['cluster-facts']['clusters_basedir'] }}"
+    cluster_dir: "{{ _local_home + '/.kube/clusters/' + _cluster_name }}"
+    cluster_bin_dir: "{{ _local_home + '/.kube/clusters/' + _cluster_name + '/bin' }}"
     cluster_domain: "{{ hostvars['cluster-facts']['cluster_domain'] }}"
-    cluster_name: "{{ hostvars['cluster-facts']['cluster_name'] }}"
+  vars:
+    _local_home: "{{ hostvars['localhost-facts'].local_home }}"
+    _cluster_name: "{{ inventory_hostname }}"
 
 - name: Set ssh_keypair to empty
   set_fact:
@@ -35,7 +41,7 @@
 
 - name: Update cluster facts based upon options
   set_fact:
-    k8s_version: "{{ options['k8s_version'] }}" 
+    k8s_vip_addr: "{{ options['k8s_vip_addr'] | default('') }}"
     k8s_inf_nodes: "{{ 1 if (options['k8s_inf_create_node'] | bool) else 0 }}"
     k8s_master_nodes: "{{ options['k8s_master_nodes'] | int }}"
     k8s_worker_nodes: "{{ options['k8s_worker_nodes'] | int }}"
@@ -47,7 +53,7 @@
 
 - name: We will need to have either an inf node or only one master node
   assert:
-    that: k8s_inf_nodes | int == 1 or k8s_master_nodes | int == 1
+    that: k8s_inf_nodes | int == 1 or k8s_master_nodes | int == 1 or k8s_vip_addr | length > 0
 
 - name: See if cluster_status.json exists
   stat:
@@ -105,7 +111,6 @@
       debug:
         msg:
         - "{{ 'NAME:               ' + cluster_name }}"
-        - "{{ 'VERSION:            ' + k8s_version }}"
         - "{{ 'ENGINE:             ' + options['k8s_engine'] }}"
 
     - name: Set local facts for execution of this role
@@ -131,24 +136,30 @@
       - absent
       - directory
 
-- name: Set fact for engine specific role
-  set_fact:
-    k8s_node_provisioning_role: "{{ 'node_provision_hosted_' + hostvars['hosted-provisioner']['options']['k8s_engine'] }}"
+    - name: Create cluster_status.json with status of absent
+      copy:
+        content: |
+          {
+              "status": "absent"
+          }
+        dest: "{{ cluster_dir + '/cluster_status.json' }}"
+        mode: '0644'
 
 - name: Set infra node hostname fact
   set_fact:
-    k8s_infra_hostname: "{{ (groups['infra_node'] if (groups['infra_node'] | default([]) | length > 0) else groups['master_nodes']) | first }}"
+    k8s_infra_hostname: "{{ infra_node | default(master_nodes | first) }}"
 
 - name: Wait until we can resolve the hostname using DNS
   set_fact:
     k8s_infra_publicip: "{{ lookup('community.general.dig', hostvars[k8s_infra_hostname]['fqdn']) }}"
   until: lookup('community.general.dig', hostvars[k8s_infra_hostname]['fqdn']) == hostvars[k8s_infra_hostname]['publicip']
+  failed_when: false
 
 - name: Set fact for services host
   set_fact:
     services_host: "{{ k8s_infra_hostname }}"
-  delegate_to: 'cluster-facts'
-  delegate_facts: true
+  #delegate_to: 'cluster-facts'
+  #delegate_facts: true
 
 - name: Set infra node publicip fact
   set_fact:
@@ -165,13 +176,13 @@
 
 - name: Set kubeconfig_path and cluster_api_url facts
   set_fact:
-    cluster_api_url: "{{ cluster_api_url }}"
-    kubeconfig_path: "{{ kubeconfig_path }}"
+    #cluster_api_url: "{{ cluster_api_url }}"
+    #kubeconfig_path: "{{ kubeconfig_path }}"
     cluster_fqdn: "{{ hostvars[k8s_infra_hostname]['fqdn'] }}"
     cluster_publicip: "{{ k8s_infra_publicip }}"
     cluster_nip_fqdn: "{{ k8s_infra_publicip + '.nip.io' }}"
-  delegate_to: 'cluster-facts'
-  delegate_facts: true
+  #delegate_to: 'cluster-facts'
+  #delegate_facts: true
 
 - name: Create folders for ssh_config_path
   file:
@@ -187,12 +198,15 @@
     ssh_keytype: "{{ hostvars['localhost-facts'].ssh_keytype }}"
     ssh_comment: "{{ 'ssh access to ' + cluster_name + ' cluster' }}"
 
+- debug: var=all_nodes
+
 - name: Set node_prepare_role and keypair facts for all nodes
   set_fact:
-    node_prepare_role: node_prepare_hosted
-    keypair_pubkey: "{{ hostvars['hosted-provisioner'].keypair_pubkey }}"
-    keypair_comment: "{{ hostvars['hosted-provisioner'].keypair_comment }}"
-  loop: "{{ groups['all_nodes'] }}"
+    node_prepare_role: "{{ 'node_prepare_hosted_' + options['k8s_engine'] }}"
+    node_provisioning_role: "{{ 'node_provision_hosted_' + options['k8s_engine'] }}"
+    keypair_pubkey: "{{ keypair_pubkey }}"
+    keypair_comment: "{{ keypair_comment }}"
+  loop: "{{ all_nodes }}"
   loop_control:
     loop_var: node_name
   delegate_to: "{{ node_name }}"
@@ -207,7 +221,7 @@
           IdentitiesOnly yes
           UserKnownHostsFile /dev/null
           StrictHostKeyChecking accept-new
-      {% for hostname in groups['cluster_nodes'] %}
+      {% for hostname in cluster_nodes %}
       {% if hostname != k8s_infra_hostname %}
       
       Host {{ hostname + ' ' + hostname + '.' + cluster_domain }}

@@ -1,7 +1,7 @@
 ---
 
 - name: Install IBM Operator Catalog
-  hosts: cluster_operators
+  hosts: cluster-operators
   gather_facts: false
   tags: ibm_operator_catalog
   roles:

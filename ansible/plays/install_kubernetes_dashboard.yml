@@ -1,7 +1,7 @@
 ---
 
 - name: Install Kubernetes Dashboard
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: kubernetes_dashboard
   roles:
@@ -13,7 +13,7 @@
     api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
     kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
     target_namespace: kubernetes-dashboard
-  - role: create_dashboard_admin_user
+  - role: dashboard_create_admin_user
     api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
     kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
     target_namespace: kubernetes-dashboard

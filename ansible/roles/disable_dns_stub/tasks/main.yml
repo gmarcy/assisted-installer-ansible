@@ -1,0 +1,10 @@
+---
+
+- name: Get stat info for /run/systemd/resolve/stub-resolv.conf
+  stat:
+    path: /run/systemd/resolve/stub-resolv.conf
+  register: _result_stat
+
+- when: not _result_stat.stat.islnk
+  name: Only perform the actions when required
+  include_tasks: disable_dns_stub.yml
