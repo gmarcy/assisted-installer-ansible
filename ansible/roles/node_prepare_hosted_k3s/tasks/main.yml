@@ -1,0 +1,62 @@
+---
+
+- name: Add authorized_key for cluster to all nodes
+  include_role:
+    name: add_authorized_key_from_keypair
+  vars:
+    ssh_user: "{{ hostvars['playbook-facts'].remote_user }}"
+    ssh_pubkey: "{{ hostvars[inventory_hostname].keypair_pubkey }}"
+    ssh_comment: "{{ hostvars[inventory_hostname].keypair_comment }}"
+
+- name: Check for next step completed marker
+  stat:
+    path: .ansible/packages_installed_marker
+  register: _result_packages_installed
+
+- when: not _result_packages_installed.stat.exists
+  block:
+
+    - name: Install python3-pip, python3-libselinux and python3-libsemanage packages
+      ansible.builtin.package:
+        name:
+        - python3-pip
+        - python3-libselinux
+        - python3-libsemanage
+        state: present
+        use: "{{ hostvars[inventory_hostname].package_manager }}"
+      become: true
+      become_user: root
+      register: _result
+      failed_when: _result is not defined
+
+    - when: hostvars[inventory_hostname].package_manager == 'community.general.rpm_ostree_pkg'
+      name: Apply ostree updates
+      ansible.builtin.command: |
+        rpm-ostree apply-live --allow-replacement
+      become: true
+      become_user: root
+      register: _result
+      failed_when: _result is not defined
+
+    - name: Install latest pip modules
+      ansible.builtin.pip:
+        name:
+        - pip
+        - setuptools
+        - selinux
+        state: latest
+        extra_args: --user
+
+    - name: Create marker for packages_installed
+      file:
+        path: .ansible/packages_installed_marker
+        state: touch
+        mode: '0644'
+      changed_when: false
+
+- name: Include prepare_node_roles when defined
+  include_role:
+    name: "{{ prepare_node_role }}"
+  loop: "{{ prepare_node_roles | default([]) }}"
+  loop_control:
+    loop_var: prepare_node_role

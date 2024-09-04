@@ -1,0 +1,15 @@
+---
+
+- name: Install ArgoCD
+  hosts: cluster-facts
+  gather_facts: false
+  tags: argocd
+  roles:
+  - role: create_target_namespace
+    api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+    kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
+    target_namespace: argocd
+  - role: install_argocd
+    api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+    kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
+    target_namespace: argocd

@@ -1,0 +1,190 @@
+---
+
+- name: Set facts used in this role
+  set_fact:
+    itz_collection_name: 'TechZone Certified Base Images'
+    itz_description: 'testing automation of redhat developer hub environments'
+    itz_location:
+      datacenter: any
+      geo: americas
+      #geo: europe
+      region: any
+    itz_platform_type: OCP_Minimal
+    itz_platforms:
+      OCP_Deployer:
+        id: 65366cbbc0d4aa0017e23fb8
+        name: 'OpenShift VMWare Cluster - UPI - Deployer - V2'
+        requestMethod: 'vmware-openshift-upi-deployer-v2'
+      OCP_Minimal:
+        id: 63a3a25a3a4689001740dbb3
+        name: 'OpenShift Cluster (VMware on IBM Cloud) - UPI - Public'
+        requestMethod: 'vmware-openshift-upi'
+    itz_policies:
+      Education:
+        id: 66468cd05e3bbb001e0897c6
+        name: 'education base policy'
+      Test:
+        id: 64aec188debba9001718b50c
+        name: 'Base-Test-Policy'
+    itz_purpose: Education
+
+- name: We only handle timezone offsets that are an even number of hours
+  assert:
+    that:
+    - utc_offset | length == 5
+    - utc_offset[0] in ['+','-']
+    - utc_offset[3:5] == '00'
+  vars:
+    utc_offset: "{{ '%z' | ansible.builtin.strftime }}"
+
+- name: Retrieve our user information using the current bearer token
+  uri:
+    url: 'https://auth.techzone.ibm.com/user'
+    method: GET
+    headers:
+      Authorization: "{{ 'Bearer ' + (lookup('unvault', hostvars['playbook-secrets']['itz_bearer_token']) | trim) }}"
+    follow_redirects: all
+    validate_certs: false
+  register: _result
+
+- name: Print bearer token expiration info
+  debug: msg="{{ 'Current bearer token expires at ' + ('%Y-%m-%d %H:%M:%S' | ansible.builtin.strftime(second=_result.json.exp)) }}"
+
+- name: Set itz_user fact
+  set_fact:
+    itz_user: "{{ _result.json }}"
+
+# - fail: msg=stopping
+
+- name: Lookup the platform with the name we want
+  uri:
+    url: "{{ 'https://api.techzone.ibm.com/api/platform?' + query_param }}"
+    method: GET
+    headers:
+      accept: 'application/json'
+      Authorization: "{{ 'Bearer ' + (lookup('unvault', hostvars['playbook-secrets']['itz_bearer_token']) | trim) }}"
+    validate_certs: false
+  vars:
+    where_param:
+      name: "{{ itz_platforms[itz_platform_type]['name'] }}"
+    query_param: "{{ 'where=' + (where_param | to_json | urlencode) }}"
+  register: _result
+
+- name: Set itz_platform fact
+  set_fact:
+    itz_platform: "{{ _platform }}"
+  vars:
+    _platform: "{{ _result.json | selectattr('collection.name', '==', itz_collection_name) | flatten | first }}"
+
+- when: false
+  name: It would be nice if we could lookup a policy by name, but that requires admin auth
+  block:
+
+    - name: Lookup the policy with the name we want
+      uri:
+        url: "{{ 'https://api.techzone.ibm.com/api/policy?' + query_param }}"
+        method: GET
+        headers:
+          accept: 'application/json'
+          Authorization: "{{ 'Bearer ' + (lookup('unvault', hostvars['playbook-secrets']['itz_bearer_token']) | trim) }}"
+        validate_certs: false
+      vars:
+        where_param:
+          name: "{{ itz_policies[itz_purpose]['name'] }}"
+        query_param: "{{ 'where=' + (where_param | to_json | urlencode) }}"
+      register: _result
+
+    - name: Set itz_policy fact
+      set_fact:
+        itz_policy: "{{ _result.json | flatten | first }}"
+
+- name: Retrieve the policy we want to use
+  uri:
+    url: "{{ 'https://api.techzone.ibm.com/api/policy/' + itz_policies[itz_purpose]['id'] }}"
+    method: GET
+    headers:
+      accept: 'application/json'
+      Authorization: "{{ 'Bearer ' + (lookup('unvault', hostvars['playbook-secrets']['itz_bearer_token']) | trim) }}"
+    validate_certs: false
+  register: _result
+
+- name: Set itz_policy fact
+  set_fact:
+    itz_policy: "{{ _result.json }}"
+
+# - fail: msg=stopping
+
+- name: Retrieve existing reservations information
+  uri:
+    url: "{{ 'https://api.techzone.ibm.com/api/reservation/ibmcloud-2?' + query_param }}"
+    method: GET
+    headers:
+      accept: 'application/json'
+      Authorization: "{{ 'Bearer ' + (lookup('unvault', hostvars['playbook-secrets']['itz_bearer_token']) | trim) }}"
+    validate_certs: false
+  vars:
+    where_param:
+      myId: 'gmarcy@us.ibm.com'
+      status:
+      - Provisioning
+      - Ready
+      - Scheduled
+    query_param: "{{ 'where=' + (where_param | to_json | urlencode) }}"
+  register: _result
+
+- fail: msg=stopping
+
+- name: Create a new reservation
+  uri:
+    url: 'https://api.techzone.ibm.com/api/reservation/ibmcloud-2'
+    method: POST
+    headers:
+      accept: 'application/json'
+      Authorization: "{{ 'Bearer ' + (lookup('unvault', hostvars['playbook-secrets']['itz_bearer_token']) | trim) }}"
+    body_format: json
+    body:
+      accountPool: itzvmware
+      datacenter: "{{ itz_location.datacenter | default(selected_region.datacenter) }}"
+      description: "{{ itz_description }}"
+      dynamicOutputs:
+      - default: ''
+        description: 'Share datastore cluster'
+        name: 'shared_datastore_cluster'
+        type: 'bool'
+        value: 'true'
+      end: "{{ end }}"
+      geo: "{{ itz_location.geo }}"
+      platform:
+        approvalGated: false
+        automationBucket: public-solutions
+        cloudTarget: null
+        collection:
+          id: "{{ itz_platform.collection.id }}"
+          name: "{{ itz_platform.collection.name }}"
+          status: Active
+        emailTemplate: null
+        id: "{{ itz_platform.id }}"
+        infrastructure: "{{ itz_platform.infrastructure }}"
+        name: "{{ itz_platform.name }}"
+        status: Enabled
+      policy:
+        id: "{{ itz_policy.id }}"
+        name: "{{ itz_policy.name }}"
+        status: Enabled
+      purpose: "{{ itz_purpose }}"
+      region: "{{ itz_location.region | default(selected_region.name) }}"
+      requestMethod: "{{ selected_region.requestMethod }}"
+      start: "{{ start }}"
+      template: "{{ selected_region.template }}"
+      terms: true
+      user: "{{ itz_user.user.userid }}"
+    validate_certs: false
+  vars:
+    selected_region: "{{ itz_platform.regions | selectattr('geo', '==', itz_location.geo) | flatten | first }}"
+    adjustment_for_utc: "{{ 0 - ((('%z' | ansible.builtin.strftime)[0:3] | int) * 60 * 60) }}"
+    now: "{{ '%s' | ansible.builtin.strftime }}"
+    start: "{{ '%Y-%m-%dT%H:%M:00.000Z' | ansible.builtin.strftime(second=(now + adjustment_for_utc)) }}"
+    end: "{{ '%Y-%m-%dT%H:%M:00.000Z' | ansible.builtin.strftime(second=(now + adjustment_for_utc + itz_policy.defaultLength)) }}"
+  register: _result
+
+- fail: msg=stopping

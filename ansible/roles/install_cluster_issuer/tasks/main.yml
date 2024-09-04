@@ -7,7 +7,7 @@
     api_version: cert-manager.io/v1
     kind: ClusterIssuer
     name: le-staging-issuer
-    namespace: "{{ target_namespace }}"
+    namespace: cert-manager
     definition:
       metadata:
         labels:

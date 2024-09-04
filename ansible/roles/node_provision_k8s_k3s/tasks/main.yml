@@ -99,16 +99,6 @@
           - '~/.ssh'
           - '~/tmp'
 
-        - name: Install kubectl
-          community.general.snap:
-            name: kubectl
-            classic: true
-        
-        - name: Install helm
-          community.general.snap:
-            name: helm
-            classic: true
-
         - name: Extract oc binary
           unarchive:
             src: 'https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz'
@@ -142,9 +132,9 @@
           environment:
             INSTALL_K3S_CHANNEL: "{{ 'v' + k8s_version.split('.')[:2] | join('.') }}"
             INSTALL_K3S_EXEC: "{{ (tls_san_args | list | join(' ')) + ' --disable=traefik --disable=servicelb --disable=local-storage' }}"
-            HTTP_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
-            HTTPS_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
-            NO_PROXY: "localhost,127.0.0.1,0.0.0.0,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.svc"
+            #HTTP_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
+            #HTTPS_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
+            #NO_PROXY: "localhost,127.0.0.1,0.0.0.0,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.svc"
 
         - name: Add proxy settings to the containerd environment
           blockinfile:

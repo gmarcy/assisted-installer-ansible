@@ -1,0 +1,8 @@
+---
+
+- name: Deploy services to remote hosts
+  hosts: remote_hosts
+  gather_facts: false
+  roles:
+  - role: loop_over_roles
+    role_loop: "{{ hostvars['services-facts'].deployments[inventory_hostname] }}"

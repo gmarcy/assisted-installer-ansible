@@ -1,0 +1,67 @@
+---
+
+all_nodes:
+  children:
+    infra_nodes:
+  hosts:
+    netsvcs:
+      ansible_connection: "ssh"
+      ansible_host: "netsvcs.lab.gmarcy.com"
+      ansible_ssh_user: "core"
+      cluster_name: netsvcs-cluster
+      cluster_role: "master"
+      fqdn: "netsvcs.lab.gmarcy.com"
+      privateip: ""
+      publicip: "192.168.222.253"
+      short_hostname: "netsvcs"
+      prepare_node_roles:
+      - prepare_csi_lvm
+      - disable_dns_stub
+      - increase_inotify_limits
+
+cluster_provisioners:
+  children:
+    hosted_provisioners:
+      hosts:
+        nuc10-cluster:
+          cluster_name: "netsvcs-cluster"
+          all_nodes:
+          - netsvcs
+          cluster_nodes:
+          - netsvcs
+          master_nodes:
+          - netsvcs
+          worker_nodes:
+      vars:
+        provisioning_role: 'cluster_request_hosted'
+        deprovisioning_role: 'cluster_cleanup_hosted'
+        cluster_facts_role: 'cluster_gather_facts_hosted'
+        cluster_description: 'Kubernetes K3S Cluster'
+        deploy_infra_services: false
+        vars_inventory:
+          k8s_engine: k3s
+          k8s_inf_create_node: false
+          k8s_master_nodes: 1
+          k8s_worker_nodes: 0
+        k8s_k3s_registries_template: |
+          configs:
+            "docker.io":
+              auth:
+                username: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_user']) | trim }}
+                password: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_password']) | trim }}
+              tls:
+                insecure_skip_verify: true
+
+ungrouped:
+  hosts:
+    playbook-facts:
+      inventory_hosts:
+      - netsvcs
+    cluster-facts:
+      inventory_clusters:
+      - netsvcs-cluster
+      cluster_provisioner: 'hosted-provisioner'
+      inv_cluster_description: 'Kubernetes K3S Cluster'
+      inv_cluster_domain: clusters.lab.gmarcy.com
+      inv_kubernetes_distro: k3s
+    hosted-provisioner:

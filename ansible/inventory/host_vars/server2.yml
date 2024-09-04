@@ -1,5 +1,8 @@
 ---
 
+gathering_roles:
+- gmarcy.ansible.setup_ansible_host
+- gmarcy.ansible.gather_host_facts
 host_address: 192.168.222.202
 install_disk: nvme0n1
 ipmi_info:

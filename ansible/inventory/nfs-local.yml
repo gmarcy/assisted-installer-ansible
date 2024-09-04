@@ -1,0 +1,10 @@
+---
+
+ungrouped:
+  hosts:
+    cluster-storage:
+      storage_provisioner: 'nfslocal'
+      provisioning_role: 'storage_deploy_nfslocal'
+      deprovisioning_role: 'storage_remove_nfslocal'
+      inv_default_storage_class: "{{ nfslocal_storage_class }}"
+      inv_default_block_class: "{{ nfslocal_block_class }}"

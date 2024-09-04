@@ -1,7 +1,7 @@
 ---
 
 - name: Install cluster registry
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: cluster_registry
   roles:

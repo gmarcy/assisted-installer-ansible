@@ -1,0 +1,24 @@
+---
+
+ungrouped:
+  hosts:
+    cluster-facts:
+      w3id_cluster_admins:
+      - gmarcy@us.ibm.com
+      - ebanda@us.ibm.com
+      - grace.jansen1@ibm.com
+      - Prejith.J@ibm.com
+      - daniel.guinan@ibm.com
+    cluster-operators:
+      operators_to_deploy:
+      - name: rhdh
+        namespace: rhdh-operator
+        catalog: redhat-operators
+      - name: openshift-gitops-operator
+        namespace: openshift-gitops-operator
+        catalog: redhat-operators
+      - name: openshift-pipelines-operator-rh
+        namespace: openshift-operators
+        catalog: redhat-operators
+    developer-hub:
+      target_namespace: gmarcy-dev

@@ -1,0 +1,372 @@
+---
+
+- name: Check for existing developer-hub Backstage instance
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: rhdh.redhat.com/v1alpha1
+    kind: Backstage
+    name: developer-hub
+    namespace: "{{ target_namespace }}"
+  register: _result
+
+- name: Set fact if developer-hub Backstage instance is deployed
+  set_fact:
+    developer_hub_deployed: "{{ _result.resources | map(attribute='status.conditions') | flatten | selectattr('type','equalto','Deployed') | selectattr('status','equalto','True') | length > 0 }}"
+
+- when: not developer_hub_deployed
+  block:
+
+    - name: Create the target_namespace Namespace
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: "{{ target_namespace }}"
+      register: _result
+
+    - name: Create the rhdh-kubernetes ServiceAccount
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: ServiceAccount
+        name: rhdh-kubernetes
+        namespace: "{{ target_namespace }}"
+      register: _result
+
+    - name: Create the rhdh-kubernetes-crb ClusterRoleBinding
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: kubernetes-cluster-admin
+        definition:
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+          - kind: ServiceAccount
+            name: rhdh-kubernetes
+            namespace: "{{ target_namespace }}"
+      register: _result
+
+    - name: Fetch the token secret created by the service account
+      kubernetes.core.k8s_info:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Secret
+        field_selectors:
+        - type=kubernetes.io/service-account-token
+        namespace: "{{ target_namespace }}"
+      register: _result
+      no_log: true
+
+    - name: Set _sa_token fact
+      set_fact:
+        _sa_token: "{{ _result.resources | selectattr('metadata.name','match','rhdh-kubernetes-token-.*') | map(attribute='data.token') | first }}"
+
+    - name: Create the argocd CR
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: argoproj.io/v1beta1
+        kind: ArgoCD
+        name: argocd
+        namespace: "{{ target_namespace }}"
+        definition:
+          spec:
+            server:
+              autoscale:
+                enabled: false
+              grpc:
+                ingress:
+                  enabled: false
+              ingress:
+                enabled: false
+              insecure: true
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                requests:
+                  cpu: 125m
+                  memory: 128Mi
+              route:
+                enabled: true
+              service:
+                type: ''
+            grafana:
+              enabled: false
+              ingress:
+                enabled: false
+              route:
+                enabled: false
+            monitoring:
+              enabled: false
+            notifications:
+              enabled: false
+            prometheus:
+              enabled: false
+              ingress:
+                enabled: false
+              route:
+                enabled: false
+            initialSSHKnownHosts: {}
+            sso:
+              dex:
+                openShiftOAuth: true
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 256Mi
+                  requests:
+                    cpu: 250m
+                    memory: 128Mi
+              provider: dex
+            rbac:
+              defaultPolicy: ''
+              policy: |
+                g, system:cluster-admins, role:admin
+              scopes: '[groups]'
+            repo:
+              resources:
+                limits:
+                  cpu: '1'
+                  memory: 1Gi
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+            resourceExclusions: |
+              - apiGroups:
+                - tekton.dev
+                clusters:
+                - '*'
+                kinds:
+                - TaskRun
+                - PipelineRun        
+            ha:
+              enabled: false
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                requests:
+                  cpu: 250m
+                  memory: 128Mi
+            tls:
+              ca: {}
+            redis:
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                requests:
+                  cpu: 250m
+                  memory: 128Mi
+            controller:
+              processors: {}
+              resources:
+                limits:
+                  cpu: '2'
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 1Gi
+              sharding: {}
+      register: _result
+
+    - name: Wait until all status fields are updated
+      kubernetes.core.k8s_info:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: argoproj.io/v1beta1
+        kind: ArgoCD
+        name: argocd
+        namespace: "{{ target_namespace }}"
+      register: _result
+      delay: 10
+      retries: 12
+      until: _result.resources[0].status is defined and _result.resources[0].status.host is defined and _result.resources[0].status.server == 'Running'
+
+    - name: Set _argocd_host fact
+      set_fact:
+        _argocd_host_url: "{{ 'https://' + _result.resources[0].status.host }}"
+
+    - name: Fetch ArgoCD admin password
+      kubernetes.core.k8s_info:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Secret
+        name: argocd-cluster
+        namespace: "{{ target_namespace }}"
+      register: _result
+
+    - name: Set _argocd_admin_password fact
+      set_fact:
+        _argocd_admin_password: "{{ _result.resources[0].data['admin.password'] }}"
+
+    - name: Create the app-config-rhdh ConfigMap
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: ConfigMap
+        name: app-config-rhdh
+        namespace: "{{ target_namespace }}"
+        definition:
+          data:
+            app-config-rhdh.yaml: |
+              app:
+                title: "Glenn's Red Hat Developer Hub"
+                baseUrl: "https://backstage-developer-hub-{{ target_namespace }}.apps.{{ _cluster_fqdn }}"
+              argocd:
+                username: ${ARGOCD_USERNAME}
+                password: ${ARGOCD_PASSWORD}
+                appLocatorMethods:
+                  - type: 'config'
+                    instances:
+                      - name: argocd
+                        url: ${ARGOCD_HOST_URL}
+                        token: ${ARGOCD_AUTH_TOKEN}
+              auth:
+                allowGuestAccess: true
+                environment: development
+                providers:
+                  github:
+                    development:
+                      appId: ${GITHUB_APP_APP_ID}
+                      clientId: ${GITHUB_APP_CLIENT_ID}
+                      clientSecret: ${GITHUB_APP_CLIENT_SECRET}
+                      enterpriseInstanceUrl: https://github.ibm.com
+                      webhookUrl: ${GITHUB_APP_WEBHOOK_URL}
+                      webhookSecret: ${GITHUB_APP_WEBHOOK_SECRET}
+                      privateKey: |
+                          ${GITHUB_APP_PRIVATE_KEY}
+              backend:
+                auth:
+                  keys:
+                  - secret: ${BACKEND_SECRET}
+                baseUrl: "https://backstage-developer-hub-{{ target_namespace }}.apps.{{ _cluster_fqdn }}"
+                cors:
+                  origin: "https://backstage-developer-hub-{{ target_namespace }}.apps.{{ _cluster_fqdn }}"
+                database:
+                  connection:
+                    password: ${POSTGRESQL_ADMIN_PASSWORD}
+                    user: postgres
+              enabled:
+                github: true
+              integrations:
+                github:
+                  - host: github.ibm.com
+                    apiBaseUrl: https://github.ibm.com/api/v3
+                    token: ${GHE_ACCESS_TOKEN}
+              kubernetes:
+                serviceLocatorMethod:
+                  type: multiTenant
+                clusterLocatorMethods:
+                  - type: config
+                    clusters:
+                      - url: ${K8S_CLUSTER_URL}
+                        name: ${K8S_CLUSTER_NAME}
+                        authProvider: serviceAccount
+                        skipTLSVerify: true
+                        skipMetricsLookup: true
+                        serviceAccountToken: ${K8S_SERVICE_ACCOUNT_TOKEN}
+              signInPage: github
+      vars:
+        _cluster_fqdn: "{{ hostvars['cluster-facts']['cluster_fqdn'] }}"
+      register: _result
+
+    - name: Create the dynamic-plugins-rhdh ConfigMap
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: ConfigMap
+        name: dynamic-plugins-rhdh
+        namespace: "{{ target_namespace }}"
+        definition:
+          data:
+            dynamic-plugins.yaml: |
+              includes:
+                - dynamic-plugins.default.yaml
+              plugins:
+                - package: './dynamic-plugins/dist/backstage-plugin-catalog-backend-module-github-dynamic'
+                  disabled: false
+                  pluginConfig: {}
+                - package: './dynamic-plugins/dist/backstage-plugin-kubernetes-backend-dynamic'
+                  disabled: false
+                  pluginConfig: {}
+                - package: './dynamic-plugins/dist/backstage-plugin-kubernetes'
+                  disabled: false
+                  pluginConfig: {}
+                - package: './dynamic-plugins/dist/roadiehq-backstage-plugin-argo-cd-backend-dynamic'
+                  disabled: false
+                  pluginConfig: {}
+                - package: './dynamic-plugins/dist/roadiehq-backstage-plugin-argo-cd'
+                  disabled: false
+                  pluginConfig: {}
+                - package: './dynamic-plugins/dist/roadiehq-scaffolder-backend-argocd-dynamic'
+                  disabled: false
+                  pluginConfig: {}
+      register: _result
+
+    - name: Create the secrets-rhdh Secret
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Secret
+        name: secrets-rhdh
+        namespace: "{{ target_namespace }}"
+        definition:
+          data:
+            BACKEND_SECRET: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_backend_secret']) | trim | b64encode }}"
+            GITHUB_APP_APP_ID: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_app_id']) | trim | b64encode }}"
+            GITHUB_APP_CLIENT_ID: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_client_id']) | trim | b64encode }}"
+            GITHUB_APP_CLIENT_SECRET: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_client_secret']) | trim | b64encode }}"
+            GITHUB_APP_WEBHOOK_URL: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_webhook_url']) | trim | b64encode }}"
+            GITHUB_APP_WEBHOOK_SECRET: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_webhook_secret']) | trim | b64encode }}"
+            GITHUB_APP_PRIVATE_KEY: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_github_app_private_key']) | trim | b64encode }}"
+            GHE_ACCESS_TOKEN: "{{ lookup('unvault',hostvars['playbook-secrets']['rhdh_ghe_access_token']) | trim | b64encode }}"
+            K8S_CLUSTER_NAME: "{{ hostvars['cluster-facts']['cluster_kubeconfig_name'] | b64encode }}"
+            K8S_CLUSTER_URL: "{{ hostvars['cluster-facts']['cluster_api_url'] | b64encode }}"
+            K8S_SERVICE_ACCOUNT_TOKEN: "{{ _sa_token }}"
+            ARGOCD_USERNAME: "{{ 'admin' | b64encode }}"
+            ARGOCD_PASSWORD: "{{ _argocd_admin_password }}"
+            ARGOCD_HOST_URL: "{{ _argocd_host_url | b64encode }}"
+      register: _result
+
+    - name: Create the developer-hub Backstage instance
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: rhdh.redhat.com/v1alpha1
+        kind: Backstage
+        name: developer-hub
+        namespace: "{{ target_namespace }}"
+        definition:
+          spec:
+            application:
+              appConfig:
+                configMaps:
+                  - name: app-config-rhdh
+                mountPath: /opt/app-root/src
+              dynamicPluginsConfigMapName: dynamic-plugins-rhdh
+              extraEnvs:
+                secrets:
+                  - name: secrets-rhdh
+              extraFiles:
+                mountPath: /opt/app-root/src
+              replicas: 1
+              route:
+                enabled: true
+            database:
+              enableLocalDb: true
+      register: _result

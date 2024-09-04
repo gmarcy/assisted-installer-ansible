@@ -1,0 +1,18 @@
+---
+
+- name: Create a podman network for the service containers
+  containers.podman.podman_network:
+    name: "{{ inventory_hostname + '-network' }}"
+    state: present
+
+- name: Create a podman pod for the service containers
+  containers.podman.podman_pod:
+    name: "{{ inventory_hostname + '-pod' }}"
+    network: "{{ inventory_hostname + '-network' }}"
+    state: started
+  register: _result_pod_info
+
+- name: Gather info about the infra container of the services pod
+  containers.podman.podman_container_info:
+    name: "{{ _result_pod_info.pod.Containers[0].Name }}"
+  register: _result_infra_container_info

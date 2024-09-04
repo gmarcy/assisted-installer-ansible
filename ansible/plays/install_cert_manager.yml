@@ -1,7 +1,7 @@
 ---
 
 - name: Install Community Cert Manager
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: cert_manager
   roles:

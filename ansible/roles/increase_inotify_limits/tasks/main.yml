@@ -1,0 +1,10 @@
+---
+
+- name: Check for task completed marker
+  stat:
+    path: ~/.ansible/inotify_limits_increased
+  register: _result_stat
+
+- when: not _result_stat.stat.exists
+  name: Only perform tasks when requested or required
+  include_tasks: increase_inotify_limits.yml

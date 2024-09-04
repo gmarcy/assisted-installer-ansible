@@ -1,0 +1,8 @@
+---
+
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.request_cluster
+  vars:
+    stop_after_task: 'create-cluster-hosts'
+- import_playbook: gmarcy.ansible.gather_cluster_facts
+- import_playbook: gmarcy.ansible.print_cluster_info

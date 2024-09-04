@@ -1,7 +1,7 @@
 ---
 
 - name: Add repository mirror config
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
   tags: mirror_config
   roles:

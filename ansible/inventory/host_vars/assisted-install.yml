@@ -1,0 +1,15 @@
+---
+
+ansible_host: localhost
+ansible_connection: local
+ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+provisioning_role: 'cluster_request_assisted'
+deprovisioning_role: 'cluster_cleanup_assisted'
+cluster_facts_role: 'cluster_gather_facts_assisted'
+
+assisted_install_host: "{{ inv_assisted_install_host | default('localhost') }}"
+assisted_install_host_url: "http://{{ assisted_install_host }}:8080"
+assisted_install_rest_url: "http://{{ assisted_install_host }}:8080/api/assisted-install/v2"
+
+services_dir: "{{ lookup('env','HOME') }}/.assisted/services"

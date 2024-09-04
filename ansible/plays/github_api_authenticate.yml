@@ -1,0 +1,16 @@
+---
+
+- name: Authenticate to github
+  hosts: playbook-secrets
+  become: false
+  gather_facts: false
+  tags: playbook_facts
+  roles:
+  - role: github_app_device_flow
+    app_client_id_secret: 'rhdh_github_app_client_id'
+    github_hostname: 'github.ibm.com'
+    github_api_test_url: "{{ 'https://github.ibm.com/api/v3/users/' + hostvars['localhost-facts']['local_user'] }}"
+  - role: github_app_device_flow
+    app_client_id_secret: 'ghapi_app_client_id'
+    github_hostname: 'github.com'
+    github_api_test_url: "{{ 'https://api.github.com/users/' + hostvars['localhost-facts']['local_user'] }}"

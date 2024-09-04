@@ -1,0 +1,85 @@
+---
+
+- name: Set facts used in the role
+  set_fact:
+    _client_id: "{{ lookup('unvault',hostvars['playbook-secrets'][app_client_id_secret]) | trim }}"
+
+- name: Request authorization
+  uri:
+    url: "{{ 'https://' + github_hostname + '/login/device/code?client_id=' + _client_id }}"
+    method: 'POST'
+    return_content: true
+    validate_certs: false
+  register: _result
+
+- name: Set _auth_facts
+  set_fact:
+    _auth_facts: "{{ _auth_facts | default({}) | combine({param_name: param_value}) }}"
+  loop: "{{ _result.content | split('&') }}"
+  vars:
+    param_name: "{{ (item | split('='))[0] }}"
+    param_value: "{{ (item | split('='))[1] | urldecode }}"
+
+- name: Let the user know what the code is
+  debug:
+    msg:
+      - '*************************'
+      - '* Enter this user code: *'
+      - "{{ '*       ' + _auth_facts.user_code + '       *' }}"
+      - '*************************'
+
+- name: Pause to give user time to copy code to clipboard
+  pause:
+    seconds: 5
+
+- name: Request authorization
+  shell: |
+    open "{{ _auth_facts.verification_uri }}"
+  args:
+    executable: '/bin/bash'
+  register: _result
+
+- name: Pause to give user time to paste code into browser
+  pause:
+    seconds: 5
+
+- name: Request authorization
+  uri:
+    url: "{{ 'https://' + github_hostname + '/login/oauth/access_token?' + query_params }}"
+    method: 'POST'
+    return_content: true
+    validate_certs: false
+  register: _result
+  vars:
+    query_params: "{{ 'client_id=' + _client_id + '&device_code=' + _auth_facts.device_code + '&grant_type=urn:ietf:params:oauth:grant-type:device_code' }}"
+  delay: "{{ _auth_facts.interval + _auth_facts.interval }}"
+  retries: "{{ 60 / _auth_facts.interval }}"
+  until: _result.content | split('&') | select('match', 'access_token=.*') | length > 0
+
+- name: Set _auth_facts
+  set_fact:
+    _auth_facts: "{{ _auth_facts | default({}) | combine({param_name: param_value}) }}"
+  loop: "{{ _result.content | split('&') }}"
+  vars:
+    param_name: "{{ (item | split('='))[0] }}"
+    param_value: "{{ (item | split('='))[1] | urldecode }}"
+
+- name: Set fact for access token
+  set_fact:
+    github_user_access_token: "{{ _auth_facts.access_token }}"
+
+- name: Use the access token to fetch app owner info
+  uri:
+    url: "{{ github_api_test_url }}"
+    method: 'GET'
+    headers:
+      Accept: 'application/vnd.github+json'
+      Authorization: "{{ 'Bearer ' + github_user_access_token }}"
+    validate_certs: false
+  register: _result
+
+- name: Clear temporary facts
+  set_fact:
+    _client_id: ""
+    _auth_facts: {}
+    _result: {}

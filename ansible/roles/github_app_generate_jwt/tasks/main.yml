@@ -1,0 +1,75 @@
+---
+
+- name: Set facts used in the role
+  set_fact:
+    _now: "{{ now(fmt='%s') }}"
+    _app_id: "{{ lookup('unvault',hostvars['playbook-secrets']['ghapi_app_app_id']) | trim }}"
+    _pem: "{{ lookup('unvault',hostvars['playbook-secrets']['ghapi_app_private_key']) | trim | b64encode }}"
+    _header:
+      typ: 'JWT'
+      alg: 'RS256'
+
+- name: Create timestamps for 60 seconds in the past and 10 minutes in the future
+  set_fact:
+    _iat: "{{ _now - 60 }}"
+    _exp: "{{ _now + 600 }}"
+
+- name: Set _payload fact
+  set_fact:
+    _payload:
+      iat: "{{ _iat }}"
+      exp: "{{ _exp }}"
+      iss: "{{ _app_id }}"
+
+- name: Set _header_payload fact
+  set_fact:
+    _header_payload: "{{ (_header | to_json | b64encode) + '.' + (_payload | to_json | b64encode) }}"
+
+- name: Generate signature
+  shell: |
+    openssl dgst -sha256 -sign <(echo -n "{{ _pem | b64decode }}")  <(echo -n "{{ _header_payload }}") | openssl base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n'
+  args:
+    executable: '/bin/bash'
+  register: _result
+
+- name: Format the JWT
+  set_fact:
+    github_api_jwt: "{{ _header_payload + '.' + _result.stdout }}"
+
+- name: Use the JWT to fetch github app info
+  uri:
+    url: 'https://api.github.com/app'
+    method: 'GET'
+    headers:
+      Accept: 'application/vnd.github+json'
+      Authorization: "{{ 'Bearer ' + github_api_jwt }}"
+    validate_certs: false
+  register: _result
+
+- name: Use the JWT to fetch app owner info
+  uri:
+    url: "{{ _result.json.owner.url }}"
+    method: 'GET'
+    headers:
+      Accept: 'application/vnd.github+json'
+      Authorization: "{{ 'Bearer ' + github_api_jwt }}"
+    validate_certs: false
+  register: _result
+
+- debug: var=_result.json
+
+- name: Clear temporary facts
+  set_fact:
+    _now: ""
+    _app_id: ""
+    _pem: ""
+    _header: ""
+    _iat: ""
+    _exp: ""
+    _payload: ""
+    _header_payload: ""
+    _result: ""
+
+- debug: var=hostvars[inventory_hostname]
+
+- fail: msg=stopping

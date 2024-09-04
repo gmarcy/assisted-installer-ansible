@@ -1,0 +1,77 @@
+---
+
+- name: Download the Openshift cluster CLI and authenticate to the cluster
+  import_role:
+    name: download_cluster_cli
+  vars:
+    client_arch: "{{ hostvars['localhost-facts']['cpu_arch'] }}"
+    client_os: "{{ hostvars['localhost-facts']['os_family'] }}"
+
+- name: Minify kubeconfig data
+  set_fact:
+    _kubeconfig:
+      apiVersion: v1
+      clusters: "{{ shared_kubeconfig.clusters | selectattr('name', '==', _current_context.context.cluster) }}"
+      contexts: "{{ shared_kubeconfig.contexts | selectattr('name', '==', _current_context.name) }}"
+      current-context: "{{ _current_context.name }}"
+      kind: Config
+      preferences: "{{ shared_kubeconfig.preferences }}"
+      users: "{{ shared_kubeconfig.users | selectattr('name', '==', _current_context.context.user) }}"
+    _selected_context: "{{ _current_context }}"
+    _user_token: "{{ shared_kubeconfig.users | selectattr('name', '==', _current_context.context.user) | map(attribute='user.token') | first }}"
+  vars:
+    _current_context: "{{ shared_kubeconfig.contexts | selectattr('name', '==', shared_kubeconfig['current-context']) | first }}"
+
+- name: Set kubeconfig facts
+  set_fact:
+    api_key: "{{ _user_token }}"
+    cluster_kubeconfig_name: "{{ _selected_context.context.cluster }}"
+
+- name: Merge new cluster kubeconfig with current kubeconfig
+  set_fact:
+    _cluster_kubeconfig: "{{ lookup('file', kubeconfig_path, errors='ignore', split_lines=false) | default('{}') | from_yaml | combine(_kubeconfig, recursive=true) }}"
+  no_log: "{{ noLog }}"
+
+- name: Copy updated kubeconfig to kubeconfig_path
+  copy:
+    content: |
+      {{ _cluster_kubeconfig | to_nice_yaml(indent=2) }}
+    dest: "{{ kubeconfig_path }}"
+    mode: '0600'
+  changed_when: false
+  no_log: "{{ noLog }}"
+
+- name: Fetch openshift version from ClusterVersion resource
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: config.openshift.io/v1
+    kind: ClusterVersion
+    name: version
+  register: _result
+
+- name: Set openshift_version fact
+  set_fact:
+    openshift_version: "{{ _result.resources[0].status.history[0].version }}"
+
+- name: Create a copy of our cluster facts
+  copy:
+    content: |
+      ---
+
+      cluster_description: "{{ cluster_description }}"
+      cluster_fqdn: "{{ cluster_fqdn }}"
+      cluster_provisioner: "{{ cluster_provisioner }}"
+      console_password: "{{ console_password | default('') }}"
+      kubernetes_distro: "{{ kubernetes_distro }}"
+    dest: "{{ cluster_dir + '/cluster-facts.yaml' }}"
+    mode: '0600'
+  changed_when: false
+  no_log: "{{ noLog }}"
+
+- name: Clear temporary facts
+  set_fact:
+    _cluster_facts: {}
+    _cluster_kubeconfig: {}
+    _kubeconfig: {}
+    _result: {}

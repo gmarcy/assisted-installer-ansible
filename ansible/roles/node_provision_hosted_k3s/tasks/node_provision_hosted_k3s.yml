@@ -1,0 +1,232 @@
+---
+
+- when: inventory_hostname == hostvars[cluster_name]['cluster_nodes'][0]
+  name: Perform once only tasks on first cluster node
+  block:
+
+    - name: Fetch the list of k3s release channels
+      set_fact:
+        k3s_channels: "{{ lookup('url', 'https://update.k3s.io/v1-release/channels', split_lines=false) | from_json }}"
+
+    - name: Fetch the latest version from the stable channel
+      set_fact:
+        k3s_latest_stable: "{{ k3s_channels.data | selectattr('name', '==', 'stable') | map(attribute='latest') | first }}"
+
+    - name: Set the kubernetes version from the k3s version
+      set_fact:
+        k8s_version: "{{ k3s_latest_stable | regex_replace('v(.*)\\+k3s.*', '\\1') }}"
+
+    - name: Create registries file template
+      copy:
+        content: |
+          {{ hostvars[cluster_name].k8s_k3s_registries_template }}
+        dest: "{{ cluster_dir + '/registries.yaml.j2' }}"
+        mode: '0600'
+      delegate_to: "{{ cluster_name }}"
+
+- when: inventory_hostname in hostvars[cluster_name]['cluster_nodes']
+  name: Common setup for all cluster nodes
+  block:
+
+    - when: hostvars[cluster_name]['ca_cert_contents'] is defined
+      name: Copy cert from infra node when we have one provisioned
+      block:
+
+        - name: Copy the ca cert into the cluster node
+          copy:
+            content: |
+              {{ hostvars[cluster_name]['ca_cert_contents'] }}
+            dest: '/usr/share/ca-certificates/docker_registry_proxy.crt'
+            mode: '0644'
+
+        - name: Add line for certificate to /etc/ca-certificates.conf
+          lineinfile:
+            path: '/etc/ca-certificates.conf'
+            regexp: '^docker_registry_proxy.crt$'
+            line: 'docker_registry_proxy.crt'
+
+        - name: Update the ca certs on the cluster node
+          command: |
+            update-ca-certificates --fresh
+          register: _result
+
+        - name: Set fact for environment_proxy
+          set_fact:
+            environment_proxy:
+              HTTP_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
+              HTTPS_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
+              NO_PROXY: "localhost,127.0.0.1,0.0.0.0,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.svc"
+
+    - name: Create k3s folder
+      file:
+        path: '/etc/rancher/k3s'
+        state: directory
+      become: true
+      become_user: root
+
+    - name: Fetch k3s.sh
+      get_url:
+        url: https://get.k3s.io
+        dest: ./k3s.sh
+        mode: 0755
+        validate_certs: false
+      register: _result
+
+    - name: Create registries file
+      template:
+        src: "{{ cluster_dir + '/registries.yaml.j2' }}"
+        dest: '/etc/rancher/k3s/registries.yaml'
+        mode: '0600'
+      become: true
+      become_user: root
+
+    - name: Set k3s node subcommand based on cluster role
+      set_fact:
+        k3s_subcommand: "{{ 'server' if cluster_role == 'master' else 'agent' }}"
+
+- when: inventory_hostname == hostvars[cluster_name]['cluster_nodes'][0]
+  name: Setup specific to the first server node of the control plane
+  block:
+
+    - name: Create folders on first cluster node
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+      - "{{ user_home + '/.local/bin' }}"
+      - "{{ user_home + '/.ssh' }}"
+      - "{{ user_home + '/tmp' }}"
+
+    - name: Download the kubectl cli for our version of kubernetes
+      get_url:
+        url: "{{ 'https://dl.k8s.io/release/v' + k8s_version + '/bin/' + os_family + '/' + cpu_arch + '/kubectl' }}"
+        dest: "{{ user_home + '/.local/bin/kubectl' }}"
+        mode: '0755'
+
+    - name: Extract oc binary
+      unarchive:
+        src: 'https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz'
+        dest: "{{ user_home + '/tmp/' }}"
+        remote_src: true
+        validate_certs: false
+      register: _result
+
+    - name: Copy oc binary to /usr/local/bin
+      copy:
+        src: "{{ user_home + '/tmp/oc' }}"
+        remote_src: true
+        dest: '/usr/local/bin/'
+        mode: '0755'
+      become: true
+      become_user: root
+
+    - name: Set fact for --tls-san parameters
+      set_fact:
+        tls_san_args:
+        - "{{ '--tls-san=' + k8s_infra_publicip + '.nip.io' }}"
+        - "{{ '--tls-san=console.' + k8s_infra_publicip + '.nip.io' }}"
+        - "{{ '--tls-san=*.apps.' + k8s_infra_publicip + '.nip.io' }}"
+        - "{{ '--tls-san=console.' + k8s_infra_hostname + '.' + cluster_domain }}"
+        - "{{ '--tls-san=' + k8s_infra_hostname + '.' + cluster_domain }}"
+
+    - name: Set facts for environment_k3s
+      set_fact:
+        environment_k3s:
+          INSTALL_K3S_CHANNEL: "{{ 'v' + k8s_version.split('.')[:2] | join('.') }}"
+          INSTALL_K3S_VERSION: "{{ k3s_latest_stable }}"
+          INSTALL_K3S_EXEC: "{{ (tls_san_args | list | join(' ')) + ' --disable=traefik --disable=servicelb --disable=local-storage --resolv-conf=/dev/null' }}"
+
+    - name: Run script
+      command: |
+        /bin/bash ./k3s.sh {{ k3s_subcommand }} --cluster-init
+      environment: "{{ environment_k3s | combine(environment_proxy | default({})) }}"
+
+    - when: hostvars[inventory_hostname].package_manager == 'community.general.rpm_ostree_pkg'
+      name: Apply ostree updates
+      ansible.builtin.command: |
+        rpm-ostree apply-live --allow-replacement
+      become: true
+      become_user: root
+      register: _result
+      failed_when: _result is not defined
+
+    - name: Add proxy settings to the containerd environment
+      blockinfile:
+        block: |
+          CONTAINERD_HTTP_PROXY={{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}
+          CONTAINERD_HTTPS_PROXY={{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}
+          CONTAINERD_NO_PROXY="localhost,127.0.0.1,0.0.0.0,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.svc"
+        path: '/etc/systemd/system/k3s.service.env'
+        marker: '# {mark} PROXY'
+        create: true
+        mode: '0600'
+      when: using_registry_proxy | default(false)
+
+    - name: Check systemctl status of k3s service
+      systemd:
+        unit: k3s
+        state: restarted
+      become: true
+      become_user: root
+      register: _result
+
+    - name: Wait until k3s.yaml has been created
+      stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      register: _result
+      until: _result.stat.exists
+
+    - name: Load node-token
+      command: |
+        cat /var/lib/rancher/k3s/server/node-token
+      register: _result
+      become: true
+      become_user: root
+      changed_when: _result is not defined
+
+    - name: Set k3s_node_token fact
+      set_fact:
+        k3s_node_token: "{{ _result.stdout | trim }}"
+      delegate_to: "{{ cluster_name }}"
+      delegate_facts: true
+
+- when: inventory_hostname in hostvars[cluster_name]['cluster_nodes'][1:]
+  name: Setup the remaining cluster nodes
+  block:
+
+    - name: Run script
+      command: |
+        /bin/bash ./k3s.sh {{ k3s_subcommand }} --server {{ k3s_server }} --token {{ k3s_token }}
+      environment:
+        INSTALL_K3S_CHANNEL: "{{ 'v' + k8s_version.split('.')[:2] | join('.') }}"
+        HTTP_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
+        HTTPS_PROXY: "{{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}"
+        NO_PROXY: "localhost,127.0.0.1,0.0.0.0,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.svc"
+      vars:
+        k3s_server: "{{ 'https://' + hostvars[hostvars[cluster_name]['cluster_nodes'][0]]['fqdn'] + ':6443' }}"
+        k3s_token: "{{ hostvars[cluster_name]['k3s_node_token'] }}"
+
+    - name: Add proxy settings to the containerd environment
+      blockinfile:
+        block: |
+          CONTAINERD_HTTP_PROXY={{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}
+          CONTAINERD_HTTPS_PROXY={{ 'http://registry-proxy.' + k8s_infra_privateip + '.nip.io:3128' }}
+          CONTAINERD_NO_PROXY="localhost,127.0.0.1,0.0.0.0,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.svc"
+        path: '/etc/systemd/system/k3s-agent.service.env'
+        marker: '# {mark} PROXY'
+        create: true
+        mode: '0600'
+
+    - name: Check systemctl status of k3s-agent service
+      systemd:
+        unit: k3s-agent
+        state: restarted
+      register: _result
+
+- when: inventory_hostname in hostvars[cluster_name]['cluster_nodes']
+  name: Create marker for node provisioned
+  file:
+    path: .ansible/k3s_node_provisioned
+    state: touch
+    mode: '0644'
+  changed_when: false

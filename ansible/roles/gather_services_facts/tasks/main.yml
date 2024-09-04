@@ -1,0 +1,71 @@
+---
+
+- when: "'gather_services_facts' not in (roles_completed | default([]))"
+  block:
+
+    - name: Gather the services facts
+      ansible.builtin.service_facts:
+      register: _result
+
+    - name: Set _service_state to unknown
+      ansible.builtin.set_fact:
+        _service_state: 'unknown'
+
+    - name: Set _service_state when firewalld is defined
+      ansible.builtin.set_fact:
+        _service_state: "{{ _result.ansible_facts.services['firewalld'].state }}"
+      when: _result.ansible_facts.services['firewalld'] is defined
+
+    - name: Set _service_state when firewalld.service is defined
+      ansible.builtin.set_fact:
+        _service_state: "{{ _result.ansible_facts.services['firewalld.service'].state }}"
+      when: _result.ansible_facts.services['firewalld.service'] is defined
+
+    - name: Set firewalld_is_active
+      ansible.builtin.set_fact:
+        firewalld_is_active: "{{ true if _service_state == 'running' else false }}"
+
+    - name: Clear _service_state
+      ansible.builtin.set_fact:
+        _service_state: ''
+
+    - name: Set _service_state when podman is defined
+      ansible.builtin.set_fact:
+        _service_state: "{{ _result.ansible_facts.services['podman'].state }}"
+      when: _result.ansible_facts.services['podman'] is defined
+
+    - name: Set _service_state when podman.service is defined
+      ansible.builtin.set_fact:
+        _service_state: "{{ _result.ansible_facts.services['podman.service'].state }}"
+      when: _result.ansible_facts.services['podman.service'] is defined
+
+    - name: Set podman_is_active
+      ansible.builtin.set_fact:
+        podman_is_active: "{{ true if _service_state == 'running' else false }}"
+
+    - name: Set _service_state to unknown
+      ansible.builtin.set_fact:
+        _service_state: 'unknown'
+
+    - name: Set _service_state when ovs-vswitchd is defined
+      ansible.builtin.set_fact:
+        _service_state: "{{ _result.ansible_facts.services['ovs-vswitchd'].state }}"
+      when: _result.ansible_facts.services['ovs-vswitchd'] is defined
+
+    - name: Set _service_state when ovs-vswitchd.service is defined
+      ansible.builtin.set_fact:
+        _service_state: "{{ _result.ansible_facts.services['ovs-vswitchd.service'].state }}"
+      when: _result.ansible_facts.services['ovs-vswitchd.service'] is defined
+
+    - name: Set ovs_is_active
+      ansible.builtin.set_fact:
+        ovs_is_active: "{{ true if _service_state == 'running' else false }}"
+
+    - name: Clear results
+      ansible.builtin.set_fact:
+        _result:
+        _service_state:
+
+    - name: Set fact that we have completed this role
+      set_fact:
+        roles_completed: "{{ roles_completed | default([]) | union(['gather_services_facts']) }}"

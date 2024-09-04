@@ -1,0 +1,63 @@
+---
+
+all:
+  children:
+    inventory_hosts:
+
+ungrouped:
+  hosts:
+    cluster-facts:
+      w3id_cluster_admins:
+      - gmarcy@us.ibm.com
+      cluster_secrets_role: generate_artifactory_token
+      artifactory_url: docker-na-public.artifactory.swg-devops.com
+      artifactory_fyre_proxies:
+        rtp: docker-na-proxy-rtp2.artifactory.swg-devops.com
+        svl: docker-na-proxy-svl3.artifactory.swg-devops.com
+      fyre_proxy: "{{ artifactory_fyre_proxies[hostvars['fyre-provisioner']['fyre_site']] }}"
+      pull_secrets:
+      - key: 'docker.io'
+        username: "{{ hostvars['playbook-secrets']['docker_io_user'] }}"
+        password: "{{ hostvars['playbook-secrets']['docker_io_password'] }}"
+        email: 'unused'
+      - key: "{{ artifactory_url }}"
+        username: "{{ hostvars['playbook-secrets']['artifactory_user'] }}"
+        password: "{{ hostvars['playbook-secrets']['artifactory_token'] }}"
+        email: 'unused'
+      - key: "{{ fyre_proxy }}"
+        username: "{{ hostvars['playbook-secrets']['artifactory_user'] }}"
+        password: "{{ hostvars['playbook-secrets']['artifactory_token'] }}"
+        email: 'unused'
+      k8s_k3s_registries_template: |
+        mirrors:
+        configs:
+          "docker.io":
+            auth:
+              username: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_user']) | trim }}
+              password: {{ lookup('unvault', hostvars['playbook-secrets']['docker_io_password']) | trim }}
+            tls:
+              insecure_skip_verify: true
+          "{{ lookup('unvault', hostvars['playbook-secrets']['artifactory_fqdn']) | trim }}":
+            auth:
+              username: {{ lookup('unvault', hostvars['playbook-secrets']['artifactory_user']) | trim }}
+              password: {{ lookup('unvault', hostvars['playbook-secrets']['artifactory_token']) | trim }}
+            tls:
+              insecure_skip_verify: true
+    cmdline-facts:
+    localhost-facts:
+      inv_ssh_keytype: rsa
+      ssh_keypair_name: fyre
+      ssh_keypairs:
+        fyre:
+          path_prefix: ""
+          secret: "fyre_ssh_key"
+    playbook-facts:
+    playbook-secrets:
+      inv_secrets_dir: "{{ lookup('env', 'HOME') + '/.ssh/.ansible/.secrets' }}"
+      artifactory_generate_access_token:
+        url: "https://na.artifactory.swg-devops.com/access/api/v1/tokens"
+        body:
+          audience: "jfrt@*"
+          description: "3 Day Test Token"
+          include_reference_token: "true"
+          expires_in: "259200"

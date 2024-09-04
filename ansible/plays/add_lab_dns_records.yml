@@ -1,0 +1,23 @@
+---
+
+- name: Add DNS records to Namecheap DNS server for all lab machines
+  hosts: localhost-facts
+  gather_facts: false
+  tasks:
+  - name: Load yaml file with lab host address info
+    set_fact:
+      lab_hosts: "{{ (lookup('file', local_home + '/dev/homelab-argocd/dnsmasq-dhcp/base/dhcp_hosts.yaml') | from_yaml)['spec']['hosts'] | selectattr('hostname','match','.*\\.lab\\.gmarcy\\.com') }}"
+  - name: Set fact with command line to authenticate to Namecheap DNS server using lexicon
+    set_fact:
+      lexicon_command: lexicon namecheap --auth-username {{ auth_username }} --auth-token {{ auth_token }} --auth-client-ip {{ auth_client_ip }}
+    vars:
+      auth_username: "{{ lookup('unvault', hostvars['playbook-secrets']['namecheap_auth_username']) | trim }}"
+      auth_token: "{{ lookup('unvault', hostvars['playbook-secrets']['namecheap_auth_token']) | trim }}"
+      auth_client_ip:  "{{ lookup('unvault', hostvars['playbook-secrets']['namecheap_auth_client_ip']) | trim }}"
+  - name: Run command to add each lab host
+    command: |
+      {{ lexicon_command }} create gmarcy.com A --name {{ name }} --content {{ content }}
+    loop: "{{ lab_hosts }}"
+    vars:
+      name: "{{ item['hostname'] | lower }}"
+      content: "{{ item['ip'] }}"

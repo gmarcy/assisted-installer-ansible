@@ -1,0 +1,95 @@
+---
+
+- name: Set cluster-facts dependent upon localhost-facts
+  hosts: cluster-facts
+  gather_facts: false
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  tasks:
+  - name: Set facts based on local_home
+    ansible.builtin.set_fact:
+      clusters_basedir: "{{ local_home + '/.kube/clusters' }}"
+      clusters_shared_kubeconfig_path: "{{ local_home + '/.kube/config' }}"
+    vars:
+      local_home: "{{ hostvars['localhost-facts'].local_home }}"
+  - name: Set facts based on cluster_name
+    ansible.builtin.set_fact:
+      cluster_dir: "{{ local_home + '/.kube/clusters/' + cluster_name }}"
+      cluster_bin_dir: "{{ local_home + '/.kube/clusters/' + cluster_name + '/bin' }}"
+    vars:
+      local_home: "{{ hostvars['localhost-facts'].local_home }}"
+    when: cluster_name is defined
+
+- import_playbook: ../plays/prepare_cluster_provisioners_group.yml
+
+- name: Request clusters from cluster provisioners
+  hosts: cluster_provisioners
+  gather_facts: false
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  tasks:
+  - name: "include_role: {{ provisioning_role }}"
+    ansible.builtin.include_role:
+      name: "{{ provisioning_role }}"
+
+- name: "Prepare nodes using node_prepare_role when requested"
+  hosts: inventory_hosts
+  gather_facts: false
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  tasks:
+  - name: "include_role: {{ node_prepare_role | default('skipped') }}"
+    ansible.builtin.include_role:
+      name: "{{ node_prepare_role }}"
+    when: node_prepare_role | default('') | length > 0
+
+- name: Generate cluster secrets using cluster_secrets_role when requested
+  hosts: playbook-secrets
+  gather_facts: false
+  vars:
+    cluster_secrets_role: "{{ hostvars['cluster-facts']['cluster_secrets_role'] or omit }}"
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  tasks:
+  - name: "include_role: {{ cluster_secrets_role | default('skipped') }}"
+    ansible.builtin.include_role:
+      name: "{{ cluster_secrets_role }}"
+    when: cluster_secrets_role | default('') | length > 0
+
+- name: Gather facts from all nodes
+  hosts: inventory_hosts
+  gather_facts: false
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  - role: gmarcy.ansible.setup_ansible_host
+  - role: gmarcy.ansible.gather_host_facts
+
+- name: Setup services running in infra node
+  hosts: "{{ infra_nodes if hostvars[hostvars['cluster-facts']['cluster_provisioner']]['deploy_infra_services'] else 'cluster-facts' }}"
+  gather_facts: false
+  vars:
+    deploy_infra_services: "{{ hostvars[hostvars['cluster-facts']['cluster_provisioner']]['deploy_infra_services'] | default(false) }}"
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  - role: gmarcy.ansible.infra_services_deploy
+    when: deploy_infra_services
+
+- name: "Provision nodes using node_provisioning_role when requested"
+  hosts: inventory_hosts
+  gather_facts: false
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  tasks:
+  - name: "include_role: {{ node_provisioning_role | default('skipped') }}"
+    ansible.builtin.include_role:
+      name: "{{ node_provisioning_role }}"
+    when: node_provisioning_role | default('') | length > 0
+
+- name: "Run any post_provisioning_roles when requested"
+  hosts: cluster_provisioners
+  gather_facts: false
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
+  - role: gmarcy.ansible.loop_over_roles
+    role_loop: "{{ post_provisioning_roles }}"
+    when: post_provisioning_roles | default([]) | length > 0

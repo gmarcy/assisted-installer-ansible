@@ -1,0 +1,89 @@
+---
+
+- name: Set facts for this role
+  set_fact:
+    target_namespace: 'argocd'
+
+- name: Check for existing argocd namespace
+  kubernetes.core.k8s_info:
+    api_key: "{{ hostvars[inventory_hostname].api_key | default(omit) }}"
+    kubeconfig: "{{ hostvars[inventory_hostname].kubeconfig_path }}"
+    api_version: v1
+    kind: Namespace
+    name: "{{ target_namespace }}"
+  register: _result
+
+- name: Set fact when namespace is present
+  set_fact:
+    argocd_namespace_exists: "{{ _result.resources | length > 0 }}"
+
+- when: argocd_namespace_exists
+  block:
+
+    - name: Check for existing argocd ApplicationSet
+      kubernetes.core.k8s_info:
+        api_key: "{{ hostvars[inventory_hostname].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[inventory_hostname].kubeconfig_path }}"
+        api_version: argoproj.io/v1alpha1
+        kind: ApplicationSet
+        name: argocd
+        namespace: "{{ target_namespace }}"
+      register: _result
+
+    - name: Set fact if argocd-cluster-argocd ArgoCD is already running
+      set_fact:
+        argocd_deployed: "{{ _result.resources | length > 0 }}"
+
+- when: not (argocd_namespace_exists and argocd_deployed)
+  block:
+
+    - name: Apply argocd kustomize kubernetes resources
+      kubernetes.core.k8s:
+        api_key: "{{ hostvars[inventory_hostname].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[inventory_hostname].kubeconfig_path }}"
+        definition: "{{ lookup('kubernetes.core.kustomize', dir='https://github.com/gmarcy/homelab-argocd/argocd/deployments/' + inventory_hostname, enable_helm=true) }}"
+      register: _result
+
+    - name: Apply argocd kustomize custom resources
+      kubernetes.core.k8s:
+        api_key: "{{ hostvars[inventory_hostname].api_key | default(omit) }}"
+        kubeconfig: "{{ hostvars[inventory_hostname].kubeconfig_path }}"
+        definition: "{{ lookup('kubernetes.core.kustomize', dir='https://github.com/gmarcy/homelab-argocd/argocd/overlays/' + inventory_hostname, enable_helm=true) }}"
+      register: _result
+
+- name: "Wait for {{ inventory_hostname }}-ingress-nginx to become healthy"
+  kubernetes.core.k8s_info:
+    api_key: "{{ hostvars[inventory_hostname].api_key | default(omit) }}"
+    kubeconfig: "{{ hostvars[inventory_hostname].kubeconfig_path }}"
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: "{{ inventory_hostname + '-ingress-nginx' }}"
+    namespace: "{{ target_namespace }}"
+  register: _result
+  delay: 10
+  retries: 30
+  until: (_result.resources | length > 0) and (_result.resources | map(attribute='status.health.status', default='MISSING') | intersect(['Healthy']) | length == 1)
+
+- name: Fetch the initial admin password
+  kubernetes.core.k8s_info:
+    api_key: "{{ hostvars[inventory_hostname].api_key | default(omit) }}"
+    kubeconfig: "{{ hostvars[inventory_hostname].kubeconfig_path }}"
+    api_version: v1
+    kind: Secret
+    name: argocd-initial-admin-secret
+    namespace: "{{ target_namespace }}"
+  register: _result
+
+- name: Set argocd_admin_password fact
+  set_fact:
+    argocd_admin_password: "{{ _result.resources | map(attribute='data.password') | first }}"
+
+- name: Display ArgoCD admin password
+  debug:
+    msg: "{{ 'Login to the argocd console using username(password) of admin(' + (argocd_admin_password | b64decode) + ')' }}"
+
+- name: Save admin password in cluster dir
+  copy:
+    content: "{{ argocd_admin_password }}"
+    dest: "{{ hostvars[inventory_hostname].cluster_dir + '/.argocd-initial-admin-secret' }}"
+    mode: '0600'

@@ -92,7 +92,7 @@
   set_fact:
     _result_pullsecret: "{{ registry_pullsecret | combine(disconnected_auth, recursive=true) }}"
 
-- name: Override final kubeinit_registry_pullsecret with both auths
+- name: Override final registry_pullsecret with both auths
   set_fact:
     registry_pullsecret: "{{ _result_pullsecret }}"
 

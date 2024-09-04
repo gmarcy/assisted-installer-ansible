@@ -1,0 +1,7 @@
+---
+
+- name: Allocate a TechZone cluster
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - role: cluster_request_techzone

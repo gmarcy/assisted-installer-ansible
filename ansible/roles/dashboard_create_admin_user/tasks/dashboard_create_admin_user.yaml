@@ -1,0 +1,66 @@
+---
+
+- name: Create the dashboard-admin-user ServiceAccount
+  kubernetes.core.k8s:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: ServiceAccount
+    name: dashboard-admin-user
+    namespace: "{{ target_namespace }}"
+  register: _result
+
+- name: Set service_account_uid and create_bearer_token_secret facts
+  set_fact:
+    service_account_uid: "{{ _result.result.metadata.uid }}"
+
+- name: Create the dashboard-admin-user ClusterRoleBinding
+  kubernetes.core.k8s:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    name: dashboard-admin-user
+    definition:
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+        - kind: ServiceAccount
+          name: dashboard-admin-user
+          namespace: "{{ target_namespace }}"
+  register: _result
+
+- name: Create the dashboard-admin-token-xxxxx Secret
+  kubernetes.core.k8s:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Secret
+    namespace: "{{ target_namespace }}"
+    definition:
+      metadata:
+        annotations:
+          kubernetes.io/service-account.name: dashboard-admin-user
+          kubernetes.io/service-account.uid: "{{ service_account_uid }}"
+        generateName: dashboard-admin-token-
+      type: kubernetes.io/service-account-token
+  register: _result
+
+- name: Set bearer_token_secret_name fact
+  set_fact:
+    bearer_token_secret_name: "{{ _result.result.metadata.name }}"
+
+- name: Add the bearer token secret name back into the ServiceAccount
+  kubernetes.core.k8s:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: ServiceAccount
+    name: dashboard-admin-user
+    namespace: "{{ target_namespace }}"
+    definition:
+      secrets:
+        - name: "{{ bearer_token_secret_name }}"
+  register: _result

@@ -1,0 +1,26 @@
+---
+
+- name: Ensure folder exists
+  file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    mode: '0755'
+  become: true
+  become_user: root
+
+- name: Disable the DNSStubListener
+  copy:
+    content: |
+      [Resolve]
+      DNSStubListener=no
+    dest: /etc/systemd/resolved.conf.d/no-dns-stub.conf
+    mode: '0644'
+  become: true
+  become_user: root
+
+- name: Restart systemd-resolved
+  systemd:
+    unit: systemd-resolved
+    state: restarted
+  become: true
+  become_user: root

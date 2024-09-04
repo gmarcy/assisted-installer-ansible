@@ -1,6 +1,6 @@
 ---
 
-- import_playbook: ../plays/gather_playbook_facts.yml
-- import_playbook: ../plays/assisted_wait_for_install_completion.yml
-- import_playbook: ../plays/gather_cluster_facts.yml
-- import_playbook: ../plays/print_cluster_info.yml
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.assisted_wait_for_install_completion
+- import_playbook: gmarcy.ansible.gather_cluster_facts
+- import_playbook: gmarcy.ansible.print_cluster_info

@@ -1,0 +1,29 @@
+---
+
+ansible_host: localhost
+ansible_connection: local
+ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+itz_collection_name: 'TechZone Certified Base Images'
+itz_description: 'testing automation of redhat developer hub environments'
+itz_location:
+  datacenter: any
+  region: any
+itz_platform_type: OCP_Minimal
+itz_platforms:
+  OCP_Deployer:
+    id: 65366cbbc0d4aa0017e23fb8
+    name: 'OpenShift VMWare Cluster - UPI - Deployer - V2'
+    requestMethod: 'vmware-openshift-upi-deployer-v2'
+  OCP_Minimal:
+    id: 63a3a25a3a4689001740dbb3
+    name: 'OpenShift Cluster (VMware on IBM Cloud) - UPI - Public'
+    requestMethod: 'vmware-openshift-upi'
+itz_policies:
+  Education:
+    id: 66468cd05e3bbb001e0897c6
+    name: 'education base policy'
+  Test:
+    id: 64aec188debba9001718b50c
+    name: 'Base-Test-Policy'
+itz_purpose: Education

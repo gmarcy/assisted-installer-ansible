@@ -1,0 +1,48 @@
+---
+
+- name: Add clusters to cluster_provisioners for inventory_hosts
+  hosts: cluster-facts
+  gather_facts: false
+  tasks:
+  - name: Find clusters where the inventory hosts are members of all_nodes
+    set_fact:
+      clusters_on_hosts: "{{ clusters_on_hosts | default([]) | union([cluster_name]) }}"
+      vars_for_nodes: "{{ vars_for_nodes | default([]) | union([[cluster_name, all_nodes, cluster_nodes]]) }}"
+    loop: "{{ clusters.keys() }}"
+    loop_control:
+      loop_var: cluster_name
+    vars:
+      _master_nodes: "{{ clusters[cluster_name].master_nodes | default([]) }}"
+      _worker_nodes: "{{ clusters[cluster_name].worker_nodes | default([]) }}"
+      _infra_nodes: "{{ clusters[cluster_name].infra_nodes | default([]) }}"
+      cluster_nodes: "{{ (_master_nodes + _worker_nodes) | unique }}"
+      all_nodes: "{{ (cluster_nodes + _infra_nodes) | unique }}"
+    when: all_nodes | intersect(groups['inventory_hosts']) | length > 0
+  - name: Add clusters to cluster_provisioners group
+    add_host:
+      host: "{{ cluster_name }}"
+      groups: "{{ clusters[cluster_name].provisioner_group }}"
+    loop: "{{ clusters_on_hosts | default([]) }}"
+    loop_control:
+      loop_var: cluster_name
+    changed_when: false
+  - name: Collect all the vars for each cluster
+    set_fact:
+      cluster_vars: "{{ cluster_vars | default([]) | union([cluster_name] | product(clusters[cluster_name] | dict2items)) }}"
+    loop: "{{ clusters_on_hosts | default([]) }}"
+    loop_control:
+      loop_var: cluster_name
+  - name: Add cluster_nodes and all_nodes to each cluster
+    set_fact:
+      cluster_vars: "{{ cluster_vars | default([]) | union([cluster_name] | product({'all_nodes': _all_nodes, 'cluster_nodes': _cluster_nodes} | dict2items)) }}"
+    loop: "{{ vars_for_nodes | default([]) }}"
+    vars:
+      cluster_name: "{{ item[0] }}"
+      _all_nodes: "{{ item[1] }}"
+      _cluster_nodes: "{{ item[2] }}"
+  - name: Add vars from clusters to hostvars
+    set_fact:
+      "{{ item[1].key }}": "{{ item[1].value }}"
+    loop: "{{ cluster_vars | default([]) }}"
+    delegate_to: "{{ item[0] }}"
+    delegate_facts: true

@@ -1,10 +1,11 @@
 ---
 
 - name: Install W3ID OAuth Identity Provider
-  hosts: cluster_facts
+  hosts: cluster-facts
   gather_facts: false
-  tags: cluster_facts
+  tags: w3id_oauth
   roles:
+  - role: gmarcy.ansible.check_playbook_terminated
   - role: install_oauth_idp_openid
     api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
     kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
@@ -57,6 +58,8 @@
       kind: Group
       name: w3id-cluster-admins
       definition:
-        users:
-        - gmarcy@us.ibm.com
+        users: "{{ w3id_cluster_admins }}"
     register: _result
+  - name: Clear temporary facts
+    set_fact:
+      _result: {}

@@ -1,0 +1,109 @@
+---
+
+- name: Set facts used in this role
+  set_fact:
+    cluster_dir: "{{ hostvars['cluster-facts']['cluster_dir'] }}"
+    cluster_name: "{{ hostvars['cluster-facts']['cluster_name'] }}"
+
+- name: See if cluster-facts.yaml exists
+  stat:
+    path: "{{ cluster_dir + '/cluster-facts.yaml' }}"
+  register: _result
+
+- when: not _result.stat.exists
+  fail: msg='Unable to load cluster facts'
+
+- name: Load cluster-facts file
+  set_fact:
+    _cluster_facts: "{{ lookup('file', cluster_dir + '/cluster-facts.yaml', errors='ignore', split_lines=false) | from_yaml }}"
+
+- name: Set facts from file
+  set_fact:
+    "{{ item }}": "{{ _cluster_facts[item] }}"
+  loop: "{{ _cluster_facts.keys() }}"
+
+- name: Set facts derived from cluster-facts.yaml
+  set_fact:
+    cluster_api_url: "{{ 'https://api.' + cluster_fqdn + ':6443' }}"
+    cluster_domain: "{{ (cluster_fqdn | split('.'))[1:] | join('.') }}"
+    cluster_publicip: "{{ lookup('community.general.dig', 'api.' + cluster_fqdn) }}"
+    console_url: "{{ 'https://console-openshift-console.apps.' + cluster_fqdn }}"
+    console_username: "kubeadmin"
+    kubeconfig_path: "{{ cluster_dir + '/kubeconfig' }}"
+
+- name: Download the Openshift cluster CLI and authenticate to the cluster
+  import_role:
+    name: download_cluster_cli
+  vars:
+    client_arch: "{{ hostvars['localhost-facts']['cpu_arch'] }}"
+    client_os: "{{ hostvars['localhost-facts']['os_family'] }}"
+
+- name: Authenticate to OpenShift
+  import_role:
+    name: gmarcy.ansible.openshift_authenticate
+  when: authenticate_as_kubeadmin | default(true)
+
+- name: Create kubeconfig data
+  set_fact:
+    cluster_kubeconfig_name: "{{ _kc_cluster_name }}"
+    _kubeconfig:
+      apiVersion: v1
+      clusters:
+      - cluster:
+          insecure-skip-tls-verify: true
+          server: "{{ 'https://api.' + cluster_name + '.' + cluster_domain + ':6443' }}"
+        name: "{{ _kc_cluster_name }}"
+      contexts:
+      - context:
+          cluster: "{{ _kc_cluster_name }}"
+          namespace: "{{ _kc_context_ns }}"
+          user: "{{ _kc_user_name + '/' + _kc_cluster_name }}"
+        name: "{{ _kc_context_ns + '/' + _kc_cluster_name + '/' + _kc_user_name }}"
+      current-context: "{{ _kc_context_ns + '/' + _kc_cluster_name + '/' + _kc_user_name }}"
+      kind: Config
+      preferences: {}
+      users:
+      - name: "{{ _kc_user_name + '/' + _kc_cluster_name }}"
+        user:
+          token: "{{ api_key }}"
+  vars:
+    _kc_cluster_name: "{{ 'api-' + cluster_name + '-' + (cluster_domain | replace('.','-')) + ':6443' }}"
+    _kc_context_ns: "default"
+    _kc_user_name: "kube:admin"
+  no_log: "{{ noLog }}"
+
+- name: Merge new api token with current kubeconfig
+  set_fact:
+    _cluster_kubeconfig: "{{ lookup('file', kubeconfig_path, errors='ignore', split_lines=false) | default('{}') | from_yaml | combine(_kubeconfig, recursive=true) }}"
+  no_log: "{{ noLog }}"
+
+- name: Copy updated kubeconfig to kubeconfig_path
+  copy:
+    content: |
+      {{ _cluster_kubeconfig | to_nice_yaml(indent=2) }}
+    dest: "{{ kubeconfig_path }}"
+    mode: '0600'
+  changed_when: false
+  no_log: "{{ noLog }}"
+
+- name: Fetch openshift version from ClusterVersion resource
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: config.openshift.io/v1
+    kind: ClusterVersion
+    name: version
+  register: _result
+
+- debug: var=_result
+
+- name: Set openshift_version fact
+  set_fact:
+    openshift_version: "{{ _result.resources[0].status.history[0].version }}"
+
+- name: Clear temporary facts
+  set_fact:
+    _cluster_facts: {}
+    _cluster_kubeconfig: {}
+    _kubeconfig: {}
+    _result: {}

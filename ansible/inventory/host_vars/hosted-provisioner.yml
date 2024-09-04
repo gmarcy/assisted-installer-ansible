@@ -1,0 +1,21 @@
+---
+
+ansible_host: localhost
+ansible_connection: local
+ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+vars_group:
+  k8s_inf_create_node: true
+  k8s_inf_os: 'Ubuntu 22.04'
+  k8s_inf_cpu: 4
+  k8s_inf_mem: 8
+  k8s_inf_extra_storage: 0
+  k8s_node_os: 'Ubuntu 22.04'
+  k8s_master_nodes: 3
+  k8s_master_cpu: 4
+  k8s_master_mem: 8
+  k8s_master_extra_storage: 0
+  k8s_worker_nodes: 3
+  k8s_worker_cpu: 8
+  k8s_worker_mem: 16
+  k8s_worker_extra_storage: 0

@@ -1,0 +1,5 @@
+---
+
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: ../plays/prepare_remote_hosts.yml
+- import_playbook: ../plays/deploy_services.yml

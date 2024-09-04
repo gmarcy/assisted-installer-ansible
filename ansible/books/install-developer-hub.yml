@@ -1,0 +1,5 @@
+---
+
+- import_playbook: gmarcy.ansible.gather_playbook_facts
+- import_playbook: gmarcy.ansible.gather_cluster_facts
+- import_playbook: ../plays/install_developer_hub.yml

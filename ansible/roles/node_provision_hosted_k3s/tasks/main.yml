@@ -1,0 +1,123 @@
+---
+
+- name: Set facts used in this role
+  set_fact:
+    cluster_name: "{{ hostvars[cluster_name]['cluster_name'] }}"
+    cluster_domain: "{{ hostvars[cluster_name]['cluster_domain'] }}"
+    cluster_dir: "{{ hostvars[cluster_name]['cluster_dir'] }}"
+    k8s_infra_hostname: "{{ hostvars[cluster_name]['k8s_infra_hostname'] }}"
+    k8s_infra_publicip: "{{ hostvars[cluster_name]['k8s_infra_publicip'] }}"
+    k8s_infra_privateip: "{{ hostvars[cluster_name]['k8s_infra_privateip'] }}"
+
+- when: inventory_hostname in hostvars[cluster_name]['cluster_nodes']
+  name: Check to see if we have already provisioned all the nodes
+  block:
+
+    - name: Check to see if we have provisioned this node
+      stat:
+        path: .ansible/k3s_node_provisioned
+      register: _result
+
+    - when: inventory_hostname == hostvars[cluster_name]['cluster_nodes'][0]
+      name: Set fact if node provisioning completed
+      set_fact:
+        nodes_provisioned: "{{ hostvars[cluster_name]['cluster_nodes'] | map('extract', hostvars, '_result') | map(attribute='stat.exists') | unique | difference([true]) | length == 0 }}"
+      delegate_to: "{{ cluster_name }}"
+      delegate_facts: true
+
+- when: not hostvars[cluster_name]['nodes_provisioned']
+  name: Some nodes have not been provisioned
+  include_tasks: node_provision_hosted_k3s.yml
+
+- when: inventory_hostname == hostvars[cluster_name]['cluster_nodes'][0]
+  block:
+
+    - name: Retrieve k3s config
+      command:
+        cat /etc/rancher/k3s/k3s.yaml
+      register: _result
+      changed_when: _result is not defined
+      become: true
+      become_user: root
+
+    - name: Save the kube config
+      set_fact:
+        kube_config: "{{ _result.stdout | trim }}"
+      delegate_to: "{{ cluster_name }}"
+      delegate_facts: true
+
+- when: inventory_hostname == k8s_infra_hostname
+  name: Complete the setup of the infra node
+  block:
+
+    - name: Check for .kube/config file on infra host
+      stat:
+        path: .kube/config
+      register: _result
+
+    - name: Set fact that .kube/config exists
+      set_fact:
+        kube_config_exists: "{{ _result.stat.exists }}"
+
+    - when: not kube_config_exists
+      name: Copy the k8s_config to .kube/config
+      block:
+
+        - name: Create folders on the infra node
+          file:
+            path: "{{ item }}"
+            state: directory
+          loop:
+          - '.kube'
+          - '.local/bin'
+
+        - name: Copy the k8s_config to .kube/config on the infra node
+          copy:
+            content: |
+              {{ hostvars[cluster_name]['kube_config'] }}
+            dest: .kube/config
+            mode: '0600'
+
+        - name: Replace references to localhost ipaddr with infra hostname
+          replace:
+            path: .kube/config
+            regexp: '^    server: https://127.0.0.1:6443$'
+            replace: "{{ '    server: https://' + k8s_infra_publicip + '.nip.io:6443' }}"
+
+        - name: Replace all references to localhost with infra hostname
+          replace:
+            path: .kube/config
+            regexp: 'default'
+            replace: "{{ cluster_name }}"
+
+        - name: Remove any stale cluster_dir kubeconfig
+          file:
+            path: "{{ cluster_dir + '/kubeconfig' }}"
+            state: absent
+          delegate_to: 'cluster-facts'
+          delegate_facts: true
+
+        - name: Load contents of kubeconfig
+          command:
+            cat .kube/config
+          register: _result
+
+        - name: Write local kubeconfig
+          copy:
+            content: |
+              {{ _result.stdout }}
+            dest: "{{ cluster_dir + '/kubeconfig' }}"
+            mode: '0600'
+          delegate_to: 'cluster-facts'
+          delegate_facts: true
+
+    - name: Update cluster_status.json with status of deployed
+      copy:
+        content: |
+          {
+              "status": "deployed"
+          }
+        dest: "{{ cluster_dir + '/cluster_status.json' }}"
+        mode: '0644'
+      delegate_to: 'cluster-facts'
+      delegate_facts: true

@@ -1,0 +1,11 @@
+---
+
+- when: not (csi_lvm_hard_reset | default(false))
+  name: Check for task completed marker
+  stat:
+    path: ~/.ansible/csi-lvm-created
+  register: _result_stat
+
+- when: csi_lvm_hard_reset | default(false) or not _result_stat.stat.exists
+  name: Only perform tasks when requested or required
+  include_tasks: prepare_csi_lvm.yml

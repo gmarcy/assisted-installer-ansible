@@ -1,0 +1,63 @@
+---
+
+- name: Check for presence of keepalived
+  stat:
+    path: /usr/sbin/keepalived
+  register: _result
+
+- name: Set keepalived_installed fact
+  set_fact:
+    keepalived_installed: "{{ _result.stat.exists }}"
+
+- when: not keepalived_installed
+  block:
+
+    - name: Install keepalived package
+      ansible.builtin.package:
+        name: keepalived
+        state: present
+        use: "{{ hostvars[inventory_hostname].package_manager }}"
+      become: true
+      become_user: root
+      register: _result
+      failed_when: _result is not defined
+
+    - when: hostvars[inventory_hostname].package_manager == 'community.general.rpm_ostree_pkg'
+      ansible.builtin.command: |
+        rpm-ostree apply-live --allow-replacement
+      become: true
+      become_user: root
+      register: _result
+      failed_when: _result is not defined
+
+    - name: Copy our keepalived.conf template
+      copy:
+        content: |
+          {{ lookup('template', 'keepalived.conf.j2') }}
+        dest: '/etc/keepalived/keepalived.conf'
+      become: true
+      become_user: root
+
+    - name: Set keepalived_connect_any flag on and keep it persistent across reboots
+      ansible.posix.seboolean:
+        name: keepalived_connect_any
+        state: true
+        persistent: true
+      become: true
+      become_user: root
+
+    - name: Remove -D from KEEPALIVED_OPTIONS
+      lineinfile:
+        path: '/etc/sysconfig/keepalived'
+        regexp: '^KEEPALIVED_OPTIONS="-D"$'
+        line: 'KEEPALIVED_OPTIONS=""'
+      become: true
+      become_user: root
+
+    - name: Start keepalived service unit
+      systemd:
+        unit: keepalived
+        enabled: true
+        state: started
+      become: true
+      become_user: root

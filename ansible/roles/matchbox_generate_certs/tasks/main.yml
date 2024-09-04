@@ -1,0 +1,194 @@
+---
+
+- name: Check for existing matchbox-rpc Secret
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Secret
+    name: matchbox-rpc
+    namespace: matchbox
+  register: _result
+
+- name: Set fact if gitops ArgoCD is already running
+  set_fact:
+    secret_present: "{{ _result.resources | length > 0 }}"
+
+- when: not secret_present
+  block:
+
+    - name: See if folder exists
+      stat:
+        path: "{{ matchbox_certs_dir }}"
+      register: _result_stat
+
+    - when: not _result_stat.stat.exists
+      block:
+
+        - name: Create matchbox_certs_dir folder
+          file:
+            path: "{{ matchbox_certs_dir }}"
+            state: directory
+            mode: '0755'
+
+        - name: Create openssl.conf
+          copy:
+            content: |
+              [ ca ]
+              # `man ca`
+              default_ca = CA_default
+
+              [ CA_default ]
+              # Directory and file locations.
+              dir               = .
+              certs             = $dir/certs
+              crl_dir           = $dir/crl
+              new_certs_dir     = $dir/newcerts
+              database          = $dir/index.txt
+              serial            = $dir/serial
+              # certificate revocation lists.
+              crlnumber         = $dir/crlnumber
+              crl               = $dir/crl/intermediate-ca.crl
+              crl_extensions    = crl_ext
+              default_crl_days  = 30
+              default_md        = sha256
+
+              name_opt          = ca_default
+              cert_opt          = ca_default
+              default_days      = 375
+              preserve          = no
+              policy            = policy_loose
+
+              [ policy_loose ]
+              # Allow the CA to sign a range of certificates.
+              countryName             = optional
+              stateOrProvinceName     = optional
+              localityName            = optional
+              organizationName        = optional
+              organizationalUnitName  = optional
+              commonName              = supplied
+              emailAddress            = optional
+
+              [ req ]
+              # `man req`
+              default_bits        = 4096
+              distinguished_name  = req_distinguished_name
+              string_mask         = utf8only
+              default_md          = sha256
+
+              [ req_distinguished_name ]
+              countryName                    = Country Name (2 letter code)
+              stateOrProvinceName            = State or Province Name
+              localityName                   = Locality Name
+              0.organizationName             = Organization Name
+              organizationalUnitName         = Organizational Unit Name
+              commonName                     = Common Name
+
+              # Certificate extensions (`man x509v3_config`)
+
+              [ v3_ca ]
+              subjectKeyIdentifier = hash
+              authorityKeyIdentifier = keyid:always,issuer
+              basicConstraints = critical, CA:true, pathlen:0
+              keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+
+              [ usr_cert ]
+              basicConstraints = CA:FALSE
+              nsCertType = client
+              nsComment = "OpenSSL Generated Client Certificate"
+              subjectKeyIdentifier = hash
+              authorityKeyIdentifier = keyid,issuer
+              keyUsage = critical, nonRepudiation, digitalSignature, keyEncipherment
+              extendedKeyUsage = clientAuth
+
+              [ server_cert ]
+              basicConstraints = CA:FALSE
+              nsCertType = server
+              nsComment = "OpenSSL Generated Server Certificate"
+              subjectKeyIdentifier = hash
+              authorityKeyIdentifier = keyid,issuer:always
+              keyUsage = critical, digitalSignature, keyEncipherment
+              extendedKeyUsage = serverAuth
+              subjectAltName = DNS.1:matchbox.{{ public_ip }}.nip.io,IP.1:{{ public_ip }}
+            dest: "{{ matchbox_certs_dir + '/openssl.conf' }}"
+            mode: '0644'
+
+        - name: Create subfolders
+          file:
+            path: "{{ item }}"
+            state: directory
+            mode: '0755'
+          loop:
+          - "{{ matchbox_certs_dir + '/certs' }}"
+          - "{{ matchbox_certs_dir + '/crl' }}"
+          - "{{ matchbox_certs_dir + '/newcerts' }}"
+
+        - name: Touch files
+          file:
+            path: "{{ item }}"
+            state: touch
+            mode: '0644'
+          loop:
+          - "{{ matchbox_certs_dir + '/index.txt' }}"
+          - "{{ matchbox_certs_dir + '/index.txt.attr' }}"
+
+        - name: Create serial
+          copy:
+            content: |
+              1000
+            dest: "{{ matchbox_certs_dir + '/serial' }}"
+            mode: '0644'
+
+        - name: Run commands to create certs
+          command:
+            cmd: "{{ item }}"
+            chdir: "{{ matchbox_certs_dir }}"
+          loop:
+          - "openssl genrsa -out ca.key 4096"
+          - "openssl req -config openssl.conf -new -x509 -days 3650 -sha256 -key ca.key -extensions v3_ca -out ca.crt -subj /CN=fake-ca"
+          - "openssl genrsa -out server.key 2048"
+          - "openssl req -config openssl.conf -new -sha256 -key server.key -out server.csr -subj /CN=fake-server"
+          - "openssl ca -batch -config openssl.conf -extensions server_cert -days 365 -notext -md sha256 -in server.csr -out server.crt -cert ca.crt -keyfile ca.key"
+          - "openssl genrsa -out client.key 2048"
+          - "openssl req -config openssl.conf -new -sha256 -key client.key -out client.csr -subj /CN=fake-client"
+          - "openssl ca -batch -config openssl.conf -extensions usr_cert -days 365 -notext -md sha256 -in client.csr -out client.crt -cert ca.crt -keyfile ca.key"
+
+        - name: Remove CSRs
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+          - "{{ matchbox_certs_dir + '/server.csr' }}"
+          - "{{ matchbox_certs_dir + '/client.csr' }}"
+
+      vars:
+        public_ip: "{{ hostvars['cluster-facts']['cluster_publicip'] }}"
+
+    - name: Ensure namespace exists
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: matchbox
+      register: _result
+
+    - name: Create matchbox-rpc secret
+      kubernetes.core.k8s:
+        api_key: "{{ api_key | default(omit) }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Secret
+        name: matchbox-rpc
+        namespace: matchbox
+        definition:
+          data:
+            ca.crt: "{{ lookup('file', matchbox_certs_dir + '/ca.crt') | b64encode }}"
+            server.crt: "{{ lookup('file', matchbox_certs_dir + '/server.crt') | b64encode }}"
+            server.key: "{{ lookup('file', matchbox_certs_dir + '/server.key') | b64encode }}"
+          type: Opaque
+      register: _result
+
+  vars:
+    cluster_dir: "{{ hostvars['cluster-facts']['cluster_dir'] }}"
+    matchbox_certs_dir: "{{ cluster_dir + '/matchbox/certs' }}"

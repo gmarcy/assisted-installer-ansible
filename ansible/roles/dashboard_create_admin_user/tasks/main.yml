@@ -1,0 +1,36 @@
+---
+
+- name: Set facts used in this role
+  set_fact:
+    target_namespace: kubernetes-dashboard
+
+- name: Wait for the namespace to exist
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Namespace
+    name: "{{ target_namespace }}"
+  register: _result
+  delay: 10
+  retries: 30
+  until: _result.resources | length > 0
+
+- name: Fetch the dashboard-admin-user ServiceAccount
+  kubernetes.core.k8s_info:
+    api_key: "{{ api_key | default(omit) }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: ServiceAccount
+    name: dashboard-admin-user
+    namespace: "{{ target_namespace }}"
+  register: _result
+
+- name: Set create_service_account and create_bearer_token_secret facts
+  set_fact:
+    create_service_account: "{{ _result.resources | length == 0 }}"
+    create_bearer_token_secret: "{{ _result.resources | map(attribute='secrets', default=[]) | flatten | selectattr('name', 'match', 'dashboard-admin-token-.*') | length == 0 }}"
+
+- when: create_bearer_token_secret
+  name: Create bearer token secret when absent
+  include_tasks: dashboard_create_admin_user.yaml

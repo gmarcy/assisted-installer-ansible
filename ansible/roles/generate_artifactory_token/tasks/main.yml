@@ -1,6 +1,11 @@
 ---
 
-- name: Set vars used in this role
+- name: Set need_artifactory_token fact
+  set_fact:
+    need_artifactory_token: "{{ artifactory_identity_token is defined and artifactory_token is not defined }}"
+
+- when: need_artifactory_token and artifactory_generate_access_token is defined
+  name: Set vars used in this role
   vars:
     cluster_dir: "{{ hostvars['cluster-facts']['cluster_dir'] }}"
     access_token_path: "{{ hostvars['cluster-facts']['cluster_dir'] + '/.artifactory_access_token' }}"

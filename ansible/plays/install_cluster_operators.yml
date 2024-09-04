@@ -1,10 +1,18 @@
 ---
 
 - name: Install Cluster Operators
-  hosts: cluster_operators
+  hosts: cluster-operators
   gather_facts: false
   tags: cluster_operators
+  roles:
+  - role: gmarcy.ansible.check_playbook_terminated
   tasks:
+  - name: Print cluster operators configuration
+    debug:
+      msg:
+      - "{{ 'Deploying Cluster operators:' }}"
+      - "{{ operators_to_deploy }}"
+    when: operators_to_deploy is defined
   - name: Create namespaces for the cluster operators
     include_role:
       name: create_target_namespace
@@ -36,6 +44,17 @@
       kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
       target_operator_name: "{{ cluster_operator['name'] }}"
       target_operator_namespace: "{{ cluster_operator['namespace'] }}"
-      target_operator_channel: "{{ cluster_operator['channel'] }}"
+      target_operator_channel: "{{ cluster_operator['channel'] or omit }}"
+      subscription_config: "{{ cluster_operator['config'] | default(omit) }}"
       target_catalog_source_name: "{{ cluster_operators_catalog_source_map[cluster_operator['catalog']]['name'] }}"
       target_catalog_source_namespace: "{{ cluster_operators_catalog_source_map[cluster_operator['catalog']]['namespace'] }}"
+  - name: Call operands_role for the cluster operators when defined
+    include_role:
+      name: "{{ cluster_operator['operands_role'] }}"
+    loop: "{{ operators_to_deploy | default([]) }}"
+    loop_control:
+      loop_var: cluster_operator
+    vars:
+      api_key: "{{ hostvars['cluster-facts']['api_key'] | default(omit) }}"
+      kubeconfig_path: "{{ hostvars['cluster-facts']['kubeconfig_path'] }}"
+    when: cluster_operator['operands_role'] is defined

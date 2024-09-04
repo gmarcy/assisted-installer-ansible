@@ -4,8 +4,6 @@ ansible_host: localhost
 ansible_connection: local
 
 vars_group:
-  k8s_engine: 'k3s'             # microk8s, k3s, kubeadmin, cncf?
-  k8s_version: '1.21'
   k8s_inf_create_node: true
   k8s_inf_os: 'Ubuntu 22.04'
   k8s_inf_cpu: 4
